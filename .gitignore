@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Build artifacts
+dist/
+build/
+.vercel/
+.netlify/
+
+# Environment and sensitive keys
+.env
+.env.local
+.env.*.local
+API-Keys/
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
