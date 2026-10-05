@@ -1,6 +1,6 @@
 /**
  * Vercel cron target. Set CRON_SECRET and call with Authorization: Bearer …
- * Alternatively enable pg_cron: select cron.schedule('fmc-esc', '*/15 * * * *', $$ select public.run_escalation(); $$);
+ * Alternatively enable pg_cron: select cron.schedule('fmc-esc', '* / 15 * * * *', $$ select public.run_escalation(); $$);
  */
 export default async function handler(req: { headers?: Record<string, string> }, res: {
   status: (n: number) => { json: (b: unknown) => void };
