@@ -3,6 +3,12 @@
 > **Hackathon Edition • Production Grade**  
 > A full-stack, closed-loop campus problem resolution platform with real-time AI auto-routing, proactive duplicate upvoting, SLA countdown escalation, 3D WebGL holographic telemetry, and student-verified resolution sign-offs.
 
+## 🌐 Live Deployments
+
+- **Vercel (Primary):** [https://fixmycampus-roan.vercel.app](https://fixmycampus-roan.vercel.app)
+- **Netlify (Mirror):** [https://fixmycampus-portal.netlify.app](https://fixmycampus-portal.netlify.app)
+- **Database:** Supabase Realtime Cloud (`odtqxytzethpsygotxyc`)
+
 ---
 
 ## 🌟 Key Innovations
