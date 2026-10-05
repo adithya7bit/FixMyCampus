@@ -17,8 +17,9 @@ build/
 .env.*.local
 API-Keys/
 
-# IDE and OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+# Workspace references and scratch
+ref0/
+ref1/
+ai studio/
+.agent/
+.agents/

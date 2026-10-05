@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FixMyCampus | Interactive Campus Issue Reporting & GIS Map</title>
+  <meta name="description" content="Pinpoint issues on your college campus map and report maintenance, safety, and infrastructure complaints in real-time." />
+  
+  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Mapbox GL JS CSS & JS v3 -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <link rel="stylesheet" href="styles.css?v=6" />
+</head>
+<body class="theme-light">
+  <!-- Top Application Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand">
+        <div class="brand-icon">
+          <i data-lucide="map-pin"></i>
+          <span class="live-dot"></span>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">FixMy<span>Campus</span></div>
+        </div>
+      </div>
+
+      <!-- Campus Switcher Selector -->
+      <div class="campus-selector-wrapper">
+        <i data-lucide="school" class="selector-icon"></i>
+        <select id="campusSelect" aria-label="Select Campus">
+          <option value="bannari-amman" selected>BIT • Bannari Amman</option>
+          <option value="kpr-iet">KPR • Engineering College</option>
+          <option value="gps-live">📍 Use My Live GPS</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Live Stats Bar (Compact Unified Badges) -->
+    <div class="header-stats">
+      <div class="stat-pill" title="Total Complaints Filed">
+        <span class="stat-num" id="statTotal">6</span>
+        <span class="stat-label">Reports</span>
+      </div>
+      <div class="stat-pill status-warn" title="Under active inspection">
+        <span class="stat-num" id="statProgress">2</span>
+        <span class="stat-label">Progress</span>
+      </div>
+      <div class="stat-pill status-success" title="Fixed and confirmed">
+        <span class="stat-num" id="statResolved">1</span>
+        <span class="stat-label">Fixed</span>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="header-right">
+      <button class="btn btn-secondary" id="emergencyBtn" title="Campus Emergency Helplines">
+        <i data-lucide="phone-call"></i>
+        <span class="btn-text">Helplines</span>
+      </button>
+
+      <button class="btn btn-secondary" id="exportCsvBtn" title="Export Campus Complaint Ledger (CSV)">
+        <i data-lucide="download"></i>
+        <span class="btn-text">Export</span>
+      </button>
+
+      <button class="btn btn-secondary" id="trackTicketBtn" title="Track complaint by Ticket ID">
+        <i data-lucide="search"></i>
+        <span class="btn-text">Track</span>
+      </button>
+
+      <button class="btn btn-primary" id="startReportBtn" title="Pinpoint and report a new issue">
+        <i data-lucide="plus-circle"></i>
+        <span class="report-btn-text">Report Issue</span>
+      </button>
+
+      <button class="btn-icon-subtle active" id="soundToggleBtn" title="Toggle Sound Feedback">
+        <i data-lucide="volume-2"></i>
+      </button>
+
+      <!-- Admin Simulation Switch (Hidden by default, shown ONLY for authenticated admins) -->
+      <label class="admin-toggle" id="adminToggleContainer" style="display:none;" title="Toggle Maintenance Officer / Admin Mode">
+        <input type="checkbox" id="adminModeToggle" />
+        <span class="toggle-slider"></span>
+        <span class="admin-label"><i data-lucide="shield-check"></i> <span class="admin-text">Admin Mode</span></span>
+      </label>
+    </div>
+  </header>
+
+  <!-- Top Admin Officer Control Banner (Visible only in Admin Mode) -->
+  <div class="admin-officer-banner" id="adminOfficerBanner" style="display:none;">
+    <div class="admin-banner-left">
+      <span class="admin-badge"><i data-lucide="shield-check"></i> CAMPUS FACILITY DISPATCH MODE ACTIVE</span>
+      <span class="admin-subtext">Quickly resolve, dispatch technicians, or delete reported complaints across campus.</span>
+    </div>
+    <div class="admin-banner-actions">
+      <button class="btn-admin-pill" id="adminQuickDispatchBtn" title="Dispatch Technicians">
+        <i data-lucide="send"></i> Dispatch Crew
+      </button>
+      <button class="btn-admin-pill btn-admin-success" id="adminResolveOpenBtn" title="Batch Resolve In-Progress">
+        <i data-lucide="check-check"></i> Resolve Active
+      </button>
+      <button class="btn-admin-pill" id="adminStatsSummaryBtn" title="View Work Orders">
+        <i data-lucide="clipboard-list"></i> Ledger Orders
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Viewport Area -->
+  <main class="main-container">
+    <!-- Map Wrapper -->
+    <div class="map-viewport">
+      <!-- Top Instruction Ribbon -->
+      <div class="pin-mode-banner" id="pinModeBanner">
+        <div class="banner-content">
+          <div class="radar-pulse"></div>
+          <div class="banner-text">
+            <strong>Pinpoint Mode Active:</strong> Click anywhere on the campus map to place the issue pinpoint. Drag the marker to adjust accurately.
+          </div>
+        </div>
+        <button class="banner-close" id="cancelPinModeBtn" title="Exit pin mode">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <!-- Quick Floating Search & Filter Toolbar -->
+      <div class="map-toolbar">
+        <div class="search-box-wrap">
+          <div class="search-box">
+            <i data-lucide="search" class="search-icon"></i>
+            <input type="text" id="searchInput" placeholder="Search location, college block, hostel, or address..." autocomplete="off" />
+            <button id="clearSearchBtn" class="clear-btn" style="display:none;" title="Clear search"><i data-lucide="x"></i></button>
+            <button id="searchLocationBtn" class="btn-search-go" title="Find & Fly to Location">
+              <i data-lucide="arrow-right"></i>
+              <span>Search</span>
+            </button>
+          </div>
+          <div class="search-autocomplete-dropdown" id="searchAutocomplete" style="display:none;"></div>
+        </div>
+
+        <div class="filter-pills-bar" id="categoryFilters">
+          <button class="filter-chip active" data-category="all">All Issues</button>
+          <button class="filter-chip" data-category="top-upvoted">🔥 Top Upvoted</button>
+          <button class="filter-chip" data-category="my-reports">⭐ My Reports</button>
+          <button class="filter-chip" data-category="electrical">⚡ Electrical</button>
+          <button class="filter-chip" data-category="plumbing">🚰 Plumbing</button>
+          <button class="filter-chip" data-category="roads">🛣️ Roads</button>
+          <button class="filter-chip" data-category="sanitation">🧹 Sanitation</button>
+          <button class="filter-chip" data-category="facilities">🪑 Facilities</button>
+          <button class="filter-chip" data-category="safety">🛡️ Safety</button>
+          <button class="filter-chip" data-category="it-network">🌐 Wi-Fi / IT</button>
+        </div>
+
+        <div class="status-filters-bar">
+          <select id="statusFilter" class="select-pill">
+            <option value="all">All Statuses</option>
+            <option value="reported">🟡 Reported (Open)</option>
+            <option value="in-progress">🔵 In Progress</option>
+            <option value="resolved">🟢 Resolved</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Leaflet Map Container -->
+      <div id="map"></div>
+
+      <!-- Floating Map Control Dock -->
+      <div class="map-dock">
+        <!-- Layer Selector -->
+        <div class="dock-group">
+          <button class="dock-btn active" id="layerStreet" title="Clean Street Map">
+            <i data-lucide="map"></i>
+            <span>Street</span>
+          </button>
+          <button class="dock-btn" id="layerSatellite" title="Satellite Imagery">
+            <i data-lucide="globe"></i>
+            <span>Satellite</span>
+          </button>
+          <button class="dock-btn" id="layerDark" title="Dark Canvas">
+            <i data-lucide="moon"></i>
+            <span>Dark</span>
+          </button>
+        </div>
+
+        <div class="dock-divider"></div>
+
+        <!-- GPS Geolocation Button -->
+        <button class="dock-btn dock-btn-accent" id="locateMeBtn" title="Find my exact GPS location on campus">
+          <i data-lucide="crosshair"></i>
+          <span>Locate Me</span>
+        </button>
+
+        <!-- 3D Perspective Toggle Button -->
+        <button class="dock-btn" id="toggle3DBtn" title="Toggle 3D Isometric View & Buildings">
+          <i data-lucide="box"></i>
+          <span>3D View</span>
+        </button>
+
+        <!-- Heatmap Hotspots Toggle Button -->
+        <button class="dock-btn" id="toggleHeatmapBtn" title="Toggle Campus Issue Hotspots (Heatmap)">
+          <i data-lucide="flame"></i>
+          <span>Hotspots</span>
+        </button>
+
+        <!-- Toggle List Drawer -->
+        <button class="dock-btn" id="toggleListDrawerBtn" title="Show Complaints List">
+          <i data-lucide="list"></i>
+          <span>List View (<span id="dockIssueCount">6</span>)</span>
+        </button>
+      </div>
+
+      <!-- Map Legend Overlay -->
+      <div class="map-legend">
+        <div class="legend-title">Issue Status</div>
+        <div class="legend-items">
+          <div class="legend-item"><span class="legend-dot dot-reported"></span> Reported</div>
+          <div class="legend-item"><span class="legend-dot dot-in-progress"></span> In Progress</div>
+          <div class="legend-item"><span class="legend-dot dot-resolved"></span> Resolved</div>
+          <div class="legend-item"><span class="legend-dot dot-urgent"></span> Urgent/Hazard</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Side Drawer: File Complaint Form -->
+    <aside class="side-drawer" id="reportDrawer">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="drawer-badge">Step 1 of 2</span>
+          <h2>File Campus Complaint</h2>
+          <p>Marked pinpoint will be sent directly to campus facility dispatch.</p>
+        </div>
+        <button class="btn-icon" id="closeReportDrawerBtn" title="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="drawer-body">
+        <form id="complaintForm">
+          <!-- Step 1: Accurate Pinpoint Location Preview -->
+          <div class="form-section">
+            <div class="section-label">
+              <i data-lucide="navigation"></i> 1. Accurate Pinpoint Location
+            </div>
+            
+            <div class="location-card">
+              <div class="location-header">
+                <div class="coord-badge" id="coordDisplay">
+                  <i data-lucide="map-pin"></i>
+                  <span>Lat: 28.5450, Lng: 77.1926</span>
+                </div>
+                <button type="button" class="btn-link" id="repositionPinBtn">
+                  <i data-lucide="crosshair"></i> Adjust on Map
+                </button>
+              </div>
+
+              <div class="location-details">
+                <div class="form-group mb-2">
+                  <label for="nearestBuildingInput">Nearest Campus Landmark / Building</label>
+                  <div class="input-with-icon">
+                    <i data-lucide="building"></i>
+                    <input type="text" id="nearestBuildingInput" placeholder="Detecting nearest landmark..." required />
+                  </div>
+                </div>
+
+                <div class="form-row mb-2">
+                  <div class="form-group col-6">
+                    <label for="floorSelect">Floor / Level</label>
+                    <select id="floorSelect">
+                      <option value="Ground Floor">Ground Floor</option>
+                      <option value="1st Floor">1st Floor</option>
+                      <option value="2nd Floor" selected>2nd Floor</option>
+                      <option value="3rd Floor">3rd Floor</option>
+                      <option value="4th Floor+">4th Floor or Above</option>
+                      <option value="Basement">Basement / Parking</option>
+                      <option value="Rooftop">Rooftop / Terrace</option>
+                      <option value="Outdoor Ground">Outdoor / Walkway</option>
+                    </select>
+                  </div>
+                  <div class="form-group col-6">
+                    <label for="roomNumberInput">Room / Wing / Pillar</label>
+                    <input type="text" id="roomNumberInput" placeholder="e.g. Room 204, East Wing" />
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="locationSpecifics">Exact Spot Description <span class="required">*</span></label>
+                  <input type="text" id="locationSpecifics" placeholder="e.g. Near water cooler, 2nd floor corridor outside lab" required />
+                  <span class="help-text">Help technicians pinpoint the exact spot without wandering.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: Category & Severity -->
+          <div class="form-section">
+            <div class="section-label">
+              <i data-lucide="tag"></i> 2. Issue Category & Urgency
+            </div>
+
+            <label class="field-label">Select Category <span class="required">*</span></label>
+            <div class="category-grid" id="categoryOptions">
+              <div class="cat-radio-card" data-cat="electrical">
+                <i data-lucide="zap"></i>
+                <span>Electrical & Lighting</span>
+              </div>
+              <div class="cat-radio-card selected" data-cat="plumbing">
+                <i data-lucide="droplet"></i>
+                <span>Water & Plumbing</span>
+              </div>
+              <div class="cat-radio-card" data-cat="roads">
+                <i data-lucide="navigation"></i>
+                <span>Roads & Walkways</span>
+              </div>
+              <div class="cat-radio-card" data-cat="sanitation">
+                <i data-lucide="trash-2"></i>
+                <span>Cleanliness & Trash</span>
+              </div>
+              <div class="cat-radio-card" data-cat="facilities">
+                <i data-lucide="armchair"></i>
+                <span>Furniture & AC</span>
+              </div>
+              <div class="cat-radio-card" data-cat="safety">
+                <i data-lucide="shield-alert"></i>
+                <span>Safety Hazard</span>
+              </div>
+              <div class="cat-radio-card" data-cat="it-network">
+                <i data-lucide="wifi"></i>
+                <span>Wi-Fi & IT</span>
+              </div>
+            </div>
+
+            <input type="hidden" id="selectedCategory" value="plumbing" />
+
+            <div class="form-group mt-3">
+              <label>Urgency Level</label>
+              <div class="urgency-chips">
+                <label class="urgency-label">
+                  <input type="radio" name="urgency" value="low" />
+                  <span class="chip chip-low">Low (Routine)</span>
+                </label>
+                <label class="urgency-label">
+                  <input type="radio" name="urgency" value="medium" checked />
+                  <span class="chip chip-medium">Medium</span>
+                </label>
+                <label class="urgency-label">
+                  <input type="radio" name="urgency" value="high" />
+                  <span class="chip chip-high">High (Disruptive)</span>
+                </label>
+                <label class="urgency-label">
+                  <input type="radio" name="urgency" value="urgent" />
+                  <span class="chip chip-urgent">Critical / Hazard</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Issue Details & Photo Evidence -->
+          <div class="form-section">
+            <div class="section-label">
+              <i data-lucide="file-text"></i> 3. Issue Details & Photo Evidence
+            </div>
+
+            <div class="form-group">
+              <label for="complaintTitle">Complaint Title <span class="required">*</span></label>
+              <input type="text" id="complaintTitle" placeholder="e.g. Major water leak flooding library corridor" maxlength="90" required />
+            </div>
+
+            <div class="form-group">
+              <label for="complaintDesc">Detailed Explanation <span class="required">*</span></label>
+              <textarea id="complaintDesc" rows="3" placeholder="Explain what is broken, how long it has been there, and any safety concerns..." required></textarea>
+            </div>
+
+            <!-- Photo Upload Area -->
+            <div class="form-group">
+              <label>Photo Proof (Recommended)</label>
+              <div class="upload-dropzone" id="dropzone">
+                <input type="file" id="photoInput" accept="image/*" class="file-hidden" />
+                <div class="dropzone-content" id="dropzonePrompt">
+                  <i data-lucide="camera" class="upload-icon"></i>
+                  <div class="dropzone-text">
+                    <strong>Click or Drag Photo Here</strong>
+                    <span>PNG, JPG up to 5MB</span>
+                  </div>
+                  <div class="sample-photos-cta">
+                    or <button type="button" class="btn-sample" id="useSamplePhotoBtn">Insert Sample Campus Photo</button>
+                  </div>
+                </div>
+                <div class="photo-preview-wrap" id="photoPreviewWrap" style="display:none;">
+                  <img id="photoPreview" src="" alt="Preview" />
+                  <button type="button" class="btn-remove-photo" id="removePhotoBtn" title="Remove photo">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: Reporter Details -->
+          <div class="form-section">
+            <div class="section-label">
+              <i data-lucide="user-check"></i> 4. Student / Reporter Info
+            </div>
+
+            <div class="anonymous-toggle-card">
+              <div class="anon-text">
+                <strong>Submit Anonymously</strong>
+                <span>Your name & student roll number will be hidden from public view.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="anonymousCheckbox" />
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="reporter-fields" id="reporterFields">
+              <div class="form-row">
+                <div class="form-group col-6">
+                  <label for="reporterName">Full Name <span class="required">*</span></label>
+                  <input type="text" id="reporterName" placeholder="e.g. Rahul Sharma" />
+                </div>
+                <div class="form-group col-6">
+                  <label for="rollNumber">Roll / Student ID <span class="required">*</span></label>
+                  <input type="text" id="rollNumber" placeholder="e.g. 2024CSB1042" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="department">Department / Hostel Block</label>
+                <input type="text" id="department" placeholder="e.g. Electrical Eng / Hostel 4" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Submission Actions -->
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="cancelReportBtn">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-submit">
+              <i data-lucide="send"></i>
+              <span>Submit Campus Complaint</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </aside>
+
+    <!-- Side Drawer: Complaint Details & Timeline -->
+    <aside class="side-drawer" id="detailDrawer">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <div class="ticket-header-line">
+            <span class="ticket-id" id="detailTicketId">#FMC-1082</span>
+            <button class="btn-copy" id="copyTicketBtn" title="Copy Ticket ID">
+              <i data-lucide="copy"></i>
+            </button>
+            <span class="status-pill" id="detailStatusBadge">In Progress</span>
+          </div>
+          <h2 id="detailTitle">Broken Streetlight on Pathway to Girls Hostel</h2>
+        </div>
+        <button class="btn-icon" id="closeDetailDrawerBtn" title="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="drawer-body">
+        <!-- Upvote & Urgency Bar -->
+        <div class="detail-action-bar">
+          <button class="btn-upvote" id="detailUpvoteBtn">
+            <i data-lucide="thumbs-up"></i>
+            <span>Affected Too (<span id="detailUpvoteCount">42</span>)</span>
+          </button>
+          <span class="urgency-tag" id="detailUrgencyTag">High Priority</span>
+          <div class="detail-action-btns">
+            <button class="btn-map-focus" id="focusOnMapBtn" title="Center on Map">
+              <i data-lucide="crosshair"></i> Center
+            </button>
+            <button class="btn-map-focus" id="shareComplaintBtn" title="Share Complaint">
+              <i data-lucide="share-2"></i> Share
+            </button>
+          </div>
+        </div>
+
+        <!-- Issue Photo -->
+        <div class="detail-photo-box" id="detailPhotoContainer">
+          <img id="detailPhoto" src="" alt="Issue evidence" />
+        </div>
+
+        <!-- Meta Details -->
+        <div class="detail-meta-grid">
+          <div class="meta-item">
+            <span class="meta-label"><i data-lucide="map-pin"></i> Location</span>
+            <span class="meta-val" id="detailLocation">Pathway between Library and Girls Hostel</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label"><i data-lucide="layers"></i> Floor / Level</span>
+            <span class="meta-val" id="detailFloor">Ground Floor</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label"><i data-lucide="tag"></i> Category</span>
+            <span class="meta-val" id="detailCategory">Electrical & Lighting</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label"><i data-lucide="user"></i> Reported By</span>
+            <span class="meta-val" id="detailReporter">Priya Sharma (2023CSB1042)</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label"><i data-lucide="calendar"></i> Date Reported</span>
+            <span class="meta-val" id="detailDate">Sep 27, 2026</span>
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div class="detail-desc-box">
+          <h3>Issue Description</h3>
+          <p id="detailDescription">The street light has been flickering and completely turned off...</p>
+        </div>
+
+        <!-- Facility Resolution Timeline -->
+        <div class="timeline-section">
+          <h3>Facility Maintenance Timeline</h3>
+          <div class="timeline-list" id="detailTimeline">
+            <!-- Dynamically injected timeline items -->
+          </div>
+        </div>
+
+        <!-- Admin Maintenance Controls (Visible when Admin Mode is ON) -->
+        <div class="admin-panel-card" id="adminControlPanel" style="display:none;">
+          <div class="admin-panel-header">
+            <i data-lucide="wrench"></i>
+            <h4>Facilities Management Dispatch</h4>
+          </div>
+          <p class="admin-help">Update status and dispatch maintenance team to this exact pinpoint.</p>
+          
+          <div class="admin-controls-grid">
+            <button class="btn-admin-action" data-action="set-in-progress">
+              <i data-lucide="clock"></i> Mark In Progress
+            </button>
+            <button class="btn-admin-action btn-admin-resolve" data-action="set-resolved">
+              <i data-lucide="check-circle-2"></i> Mark Resolved
+            </button>
+          </div>
+
+          <div class="form-group mt-2">
+            <input type="text" id="adminNoteInput" placeholder="Add resolution note (e.g. Electrician replaced bulb)..." />
+            <button class="btn btn-secondary btn-sm mt-1" id="addAdminNoteBtn">Add Progress Log</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Side Drawer: All Campus Complaints List -->
+    <aside class="side-drawer" id="listDrawer">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <h2>Campus Complaints Ledger</h2>
+          <p><span id="filteredCount">6</span> issues found in selected area</p>
+        </div>
+        <button class="btn-icon" id="closeListDrawerBtn" title="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="drawer-body p-0">
+        <div class="list-sort-bar">
+          <span>Sort By:</span>
+          <select id="listSortSelect">
+            <option value="upvotes">🔥 Most Upvoted (Urgent)</option>
+            <option value="newest">🕒 Newest First</option>
+            <option value="status">Status</option>
+          </select>
+        </div>
+        
+        <div class="complaints-list-container" id="complaintsList">
+          <!-- Dynamic cards inserted here -->
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Track Ticket Modal -->
+  <div class="modal-backdrop" id="trackModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <i data-lucide="search"></i>
+          <h3>Track Ticket Status</h3>
+        </div>
+        <button class="btn-icon" id="closeTrackModalBtn"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p>Enter the unique Complaint Ticket ID provided when filing your report (e.g., <code>FMC-1082</code> or <code>1082</code>).</p>
+        <div class="track-input-group">
+          <input type="text" id="trackTicketInput" placeholder="e.g. FMC-1082" />
+          <button class="btn btn-primary" id="searchTicketBtn">Search</button>
+        </div>
+        <div class="track-result" id="trackResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Emergency Helplines Modal -->
+  <div class="modal-backdrop" id="emergencyModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group" style="color: #dc2626;">
+          <i data-lucide="shield-alert"></i>
+          <h3>Campus & Emergency Helplines</h3>
+        </div>
+        <button class="btn-icon" id="closeEmergencyModalBtn"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p>Direct 24x7 phone helplines for campus medical dispatch, security control, power breakdown, and safety:</p>
+        
+        <!-- Campus Selector Tabs inside Modal -->
+        <div class="helpline-tabs">
+          <button class="helpline-tab active" data-campus="bannari-amman">BIT • Sathyamangalam</button>
+          <button class="helpline-tab" data-campus="kpr-iet">KPR • Coimbatore</button>
+          <button class="helpline-tab" data-campus="national">🚨 24x7 National (112 / 108)</button>
+        </div>
+
+        <div class="helpline-grid" id="helplineContainer">
+          <!-- Dynamically populated by app.js based on campus -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success Toast Modal -->
+  <div class="toast-notification" id="toast">
+    <i data-lucide="check-circle" class="toast-icon"></i>
+    <div class="toast-message">
+      <strong id="toastTitle">Complaint Registered!</strong>
+      <span id="toastDesc">Ticket #FMC-1090 created. Maintenance notified.</span>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="campus-data.js?v=2"></script>
+  <script src="app.js?v=4"></script>
+</body>
+</html>

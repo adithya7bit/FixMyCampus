@@ -1,371 +1,394 @@
 import React, { useState } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
 import { 
-  PlusCircle, 
+  Sparkles, 
   Search, 
   Filter, 
-  Clock, 
-  MapPin, 
   AlertCircle, 
+  Clock, 
   CheckCircle2, 
-  Sparkles, 
-  ThumbsUp, 
-  ChevronRight,
-  ShieldCheck,
+  Flame, 
+  ArrowUpRight,
   TrendingUp,
-  Inbox
+  X,
+  Plus,
+  ShieldCheck,
+  Camera,
+  ThumbsUp,
+  ListFilter,
+  LifeBuoy,
+  Zap,
+  Wifi,
+  Building2,
+  Home,
+  Coffee,
+  ShieldAlert
 } from 'lucide-react'
-import Campus3DHero from './Campus3DHero'
 import ComplaintCard from './ComplaintCard'
+import TiltCard from './TiltCard'
+import StudentVerificationModal from './StudentVerificationModal'
+import { playTick, playSuccess } from '../services/soundFx'
 
-export default function StudentDashboard({
+export default function StudentDashboard({ 
+  complaints = [], 
+  onSelectComplaint, 
+  onOpenReport, 
+  onUpvote, 
   currentUser,
-  complaints,
-  onOpenReportModal,
-  onSelectComplaint,
-  onVerifyResolution,
-  onSwitchToAdmin,
-  analyticsData
+  onConfirmFixed,
+  onReopenIssue
 }) {
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all') // all, active, resolved, closed
-  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [filter, setFilter] = useState('all') // all, my_reports, pending_verification, urgent
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [verifyingComplaint, setVerifyingComplaint] = useState(null)
 
-  // Filter complaints
+  // Verification alert items
+  const awaitingVerification = complaints.filter(
+    c => c.status === 'resolved' && (c.reporter_id === currentUser.id || currentUser.role === 'student')
+  )
+
+  // Filter logic
   const filteredComplaints = complaints.filter(c => {
-    // Matches search
-    const matchesSearch = !searchTerm || (
-      c.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.location_building?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.ticket_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.category?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    // Search match
+    const matchSearch = search === '' || 
+      c.title.toLowerCase().includes(search.toLowerCase()) ||
+      c.description.toLowerCase().includes(search.toLowerCase()) ||
+      c.location_building.toLowerCase().includes(search.toLowerCase()) ||
+      c.ticket_number.toLowerCase().includes(search.toLowerCase())
 
-    // Matches status
-    let matchesStatus = true
-    if (statusFilter === 'active') {
-      matchesStatus = ['pending', 'assigned', 'in_progress', 'reopened', 'escalated'].includes(c.status)
-    } else if (statusFilter === 'needs_verification') {
-      matchesStatus = c.status === 'resolved'
-    } else if (statusFilter === 'closed') {
-      matchesStatus = c.status === 'closed'
+    if (!matchSearch) return false
+
+    if (categoryFilter !== 'all') {
+      const catLower = (c.category || '').toLowerCase()
+      if (!catLower.includes(categoryFilter.toLowerCase())) return false
     }
 
-    // Matches priority
-    const matchesPriority = priorityFilter === 'all' || c.priority === priorityFilter
-
-    return matchesSearch && matchesStatus && matchesPriority
+    if (filter === 'my_reports') {
+      return c.reporter_id === currentUser.id
+    }
+    if (filter === 'pending_verification') {
+      return c.status === 'resolved'
+    }
+    if (filter === 'urgent') {
+      return c.priority === 'urgent' && c.status !== 'closed'
+    }
+    return true
   })
 
-  // Quick stats calculations
-  const totalReported = complaints.length
-  const activeCount = complaints.filter(c => ['pending', 'assigned', 'in_progress', 'reopened', 'escalated'].includes(c.status)).length
-  const needsVerificationCount = complaints.filter(c => c.status === 'resolved').length
+  // Quick stat metrics
+  const activeCount = complaints.filter(c => c.status !== 'closed').length
   const closedCount = complaints.filter(c => c.status === 'closed').length
+  const urgentCount = complaints.filter(c => c.priority === 'urgent' && c.status !== 'closed').length
 
-  // Animation variants
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.08,
-        delayChildren: 0.1
-      }
-    }
+  const handleFilterClick = (f) => {
+    playTick()
+    setFilter(f)
   }
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        type: 'spring',
-        stiffness: 300,
-        damping: 24
-      }
-    }
+  const handleOpenVerification = (comp) => {
+    playTick()
+    setVerifyingComplaint(comp)
   }
 
   return (
-    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '1.5rem 1.5rem 3rem' }}>
-      {/* 3D WEBGL HERO SECTION */}
-      <Campus3DHero
-        currentUser={currentUser}
-        activeRole="student"
-        onOpenReportModal={onOpenReportModal}
-        onSwitchToAdmin={onSwitchToAdmin}
-        totalComplaints={totalReported}
-        openComplaints={activeCount}
-        avgResolutionTime={analyticsData?.avg_resolution_time_hours || 4.2}
-      />
-
-      {/* Verification Alert Callout (If fixes are ready for confirmation) */}
-      <AnimatePresence>
-        {needsVerificationCount > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -15, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            style={{
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(5, 150, 105, 0.1))',
-              border: '1px solid rgba(16, 185, 129, 0.45)',
-              borderRadius: 'var(--radius-xl)',
-              padding: '1.25rem 1.75rem',
-              marginBottom: '2rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '1rem',
-              boxShadow: '0 8px 30px rgba(16, 185, 129, 0.15)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div style={{
-                width: 46,
-                height: 46,
-                borderRadius: 'var(--radius-md)',
-                background: 'rgba(16, 185, 129, 0.25)',
-                border: '1px solid rgba(16, 185, 129, 0.6)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#34d399'
-              }}>
-                <Sparkles size={24} />
-              </div>
-              <div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#34d399' }}>
-                  {needsVerificationCount} Completed Repair(s) Require Student Verification
-                </div>
-                <p style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
-                  The maintenance department completed these tickets. Test the fix and confirm resolution to close the loop!
-                </p>
-              </div>
+    <div className="space-y-8 animate-in fade-in duration-200">
+      
+      {/* CLOSED-LOOP VERIFICATION BANNER CALLOUT */}
+      {awaitingVerification.length > 0 && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-500/20 via-teal-500/10 to-transparent border border-emerald-500/35 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl shadow-emerald-500/5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+          
+          <div className="flex items-center gap-3.5 relative z-10">
+            <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/35 flex items-center justify-center shrink-0 shadow-sm">
+              <ShieldCheck className="w-6 h-6 text-emerald-400" />
             </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <h3 className="font-black text-sm sm:text-base text-emerald-300">
+                  Student Verification Action Required: {awaitingVerification.length} Completed Repair(s)
+                </h3>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Campus crew marked work orders completed. Under university protocol, you must physically verify repair quality before closing!
+              </p>
+            </div>
+          </div>
 
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setStatusFilter('needs_verification')}
-              style={{
-                padding: '0.65rem 1.25rem',
-                borderRadius: 'var(--radius-md)',
-                background: 'linear-gradient(135deg, #10b981, #059669)',
-                color: '#ffffff',
-                fontWeight: 700,
-                fontSize: '0.875rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
-              }}
+          <div className="flex items-center gap-2 relative z-10 shrink-0">
+            <button
+              onClick={() => handleFilterClick('pending_verification')}
+              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 font-semibold text-xs transition-all"
             >
-              Verify Fixes Now <ChevronRight size={16} />
-            </motion.button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              View Queue ({awaitingVerification.length})
+            </button>
+            <button
+              onClick={() => handleOpenVerification(awaitingVerification[0])}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-emerald-500/25 active:scale-95"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Verify Fixes Now</span>
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* KPI Stats Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-        gap: '1.25rem',
-        marginBottom: '2rem'
-      }}>
-        <motion.div whileHover={{ y: -3 }} className="glass-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>TOTAL COMPLAINTS</span>
-            <Inbox size={18} />
+      {/* Campus Telemetry KPI Cards with 3D Tilt & Specular Glare */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <TiltCard 
+          maxTilt={6}
+          glareColor="rgba(6, 182, 212, 0.22)"
+          className="p-1 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 hover:ring-cyan-500/40 shadow-lg shadow-black/30"
+        >
+          <div className="bg-[#0b101c]/90 rounded-[calc(1rem-2px)] p-4 flex flex-col justify-between h-full border border-white/5">
+            <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+              <span>Total Logged</span>
+              <AlertCircle className="w-4 h-4 text-cyan-400" />
+            </div>
+            <div className="text-2xl font-black text-white font-mono">{complaints.length}</div>
+            <div className="text-[10px] text-slate-500 mt-1">Tamil Nadu Campuses</div>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ffffff' }}>
-            {totalReported}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-            Campus problems logged
-          </div>
-        </motion.div>
+        </TiltCard>
 
-        <motion.div whileHover={{ y: -3 }} className="glass-card" style={{ borderColor: activeCount > 0 ? 'rgba(59, 130, 246, 0.35)' : 'var(--border-subtle)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#60a5fa', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>IN PROGRESS / ACTIVE</span>
-            <Clock size={18} />
+        <TiltCard 
+          maxTilt={6}
+          glareColor="rgba(245, 158, 11, 0.22)"
+          className="p-1 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 hover:ring-amber-500/40 shadow-lg shadow-black/30"
+        >
+          <div className="bg-[#0b101c]/90 rounded-[calc(1rem-2px)] p-4 flex flex-col justify-between h-full border border-white/5">
+            <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+              <span>Active in Queue</span>
+              <Clock className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="text-2xl font-black text-amber-300 font-mono">{activeCount}</div>
+            <div className="text-[10px] text-slate-500 mt-1">Under maintenance</div>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#60a5fa' }}>
-            {activeCount}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-            Under active repair
-          </div>
-        </motion.div>
+        </TiltCard>
 
-        <motion.div whileHover={{ y: -3 }} className="glass-card" style={{ borderColor: needsVerificationCount > 0 ? 'rgba(16, 185, 129, 0.45)' : 'var(--border-subtle)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#34d399', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>AWAITING VERIFICATION</span>
-            <Sparkles size={18} />
-          </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#34d399' }}>
-            {needsVerificationCount}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-            Ready for student confirmation
-          </div>
-        </motion.div>
+        {/* Interactive Needs Verification KPI */}
+        <div onClick={() => handleFilterClick('pending_verification')} className="cursor-pointer">
+          <TiltCard 
+            maxTilt={6}
+            glareColor="rgba(16, 185, 129, 0.3)"
+            className={`p-1 rounded-2xl bg-white/[0.03] ring-1 transition-all shadow-lg shadow-black/30 ${
+              awaitingVerification.length > 0 
+                ? 'ring-emerald-500/50 bg-emerald-500/[0.04]' 
+                : 'ring-white/10 hover:ring-emerald-500/40'
+            }`}
+          >
+            <div className="bg-[#0b101c]/90 rounded-[calc(1rem-2px)] p-4 flex flex-col justify-between h-full border border-white/5">
+              <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                <span className="text-emerald-400 font-semibold">Needs Student Sign-Off</span>
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                <div className="text-2xl font-black text-emerald-400 font-mono">{awaitingVerification.length}</div>
+                {awaitingVerification.length > 0 && (
+                  <span className="text-[10px] text-emerald-300 font-bold uppercase tracking-wider animate-pulse">Action Req</span>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1">Click to inspect & close</div>
+            </div>
+          </TiltCard>
+        </div>
 
-        <motion.div whileHover={{ y: -3 }} className="glass-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>CLOSED & VERIFIED</span>
-            <CheckCircle2 size={18} />
+        <TiltCard 
+          maxTilt={6}
+          glareColor="rgba(244, 63, 94, 0.22)"
+          className="p-1 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 hover:ring-rose-500/40 shadow-lg shadow-black/30"
+        >
+          <div className="bg-[#0b101c]/90 rounded-[calc(1rem-2px)] p-4 flex flex-col justify-between h-full border border-white/5">
+            <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+              <span>Urgent Hazards</span>
+              <Flame className="w-4 h-4 text-rose-400" />
+            </div>
+            <div className="text-2xl font-black text-rose-400 font-mono">{urgentCount}</div>
+            <div className="text-[10px] text-slate-500 mt-1">2-Hour Escalation Active</div>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#ffffff' }}>
-            {closedCount}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-            Closed loop complete
-          </div>
-        </motion.div>
+        </TiltCard>
       </div>
 
-      {/* Search and Filters Bar with Smooth Motion layoutId */}
-      <div style={{
-        background: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(16px)',
-        border: '1px solid var(--border-medium)',
-        borderRadius: 'var(--radius-xl)',
-        padding: '1.1rem 1.5rem',
-        marginBottom: '2rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)'
-      }}>
+      {/* Special Physical Verification Queue Notice Header when filter is active */}
+      {filter === 'pending_verification' && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-[#0d1627] border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 shrink-0">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Closed-Loop Student Verification Queue</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 uppercase">
+                  Physical Sign-Off
+                </span>
+              </h3>
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed max-w-2xl">
+                These campus repairs have been marked resolved by facilities technicians. Inspect the repair in person or review before/after photo proof, then either approve to close the work order or reopen if still defective.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => handleFilterClick('all')}
+            className="text-xs text-slate-400 hover:text-white underline whitespace-nowrap self-end sm:self-center"
+          >
+            Show All Issues
+          </button>
+        </div>
+      )}
+
+      {/* Search, Filter Toolbar & Report Trigger */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         {/* Search */}
-        <div style={{ position: 'relative', flex: 1, minWidth: 280 }}>
-          <Search size={18} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
           <input
             type="text"
-            className="form-input"
-            placeholder="Search by issue title, building, floor, room or ticket number..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ paddingLeft: '2.6rem', fontSize: '0.92rem' }}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search tickets by title, building, or FMC ID..."
+            className="w-full bg-[#0d121f] border border-white/10 rounded-xl pl-9 pr-9 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
           />
+          {search && (
+            <button 
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-3 text-slate-500 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Filter Pills with layoutId */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Filter:</span>
-          {[
-            { id: 'all', label: 'All Issues' },
-            { id: 'active', label: 'Active Repairs' },
-            { id: 'needs_verification', label: 'Needs Verification' },
-            { id: 'closed', label: 'Closed' }
-          ].map((tab) => {
-            const isSelected = statusFilter === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setStatusFilter(tab.id)}
-                style={{
-                  position: 'relative',
-                  fontSize: '0.825rem',
-                  padding: '0.45rem 0.95rem',
-                  borderRadius: 'var(--radius-full)',
-                  fontWeight: 600,
-                  color: isSelected ? '#ffffff' : 'var(--text-secondary)',
-                  background: 'transparent',
-                  border: 'none',
-                  zIndex: 1
-                }}
-              >
-                {isSelected && (
-                  <motion.div
-                    layoutId="studentFilterPill"
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      borderRadius: 'var(--radius-full)',
-                      background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                      boxShadow: '0 4px 14px rgba(37, 99, 235, 0.4)',
-                      zIndex: -1
-                    }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  />
-                )}
-                {tab.label}
-              </button>
-            )
-          })}
-
-          {/* Priority Filter */}
-          <select
-            className="form-select"
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-            style={{ width: 'auto', padding: '0.45rem 0.85rem', fontSize: '0.825rem' }}
+        {/* Filter Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          <button
+            onClick={() => handleFilterClick('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all active:scale-95 ${
+              filter === 'all' 
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm' 
+                : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+            }`}
           >
-            <option value="all">All Priorities</option>
-            <option value="urgent">Urgent</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
+            All Issues
+          </button>
+          <button
+            onClick={() => handleFilterClick('my_reports')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all active:scale-95 ${
+              filter === 'my_reports' 
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm' 
+                : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            My Reports
+          </button>
+          <button
+            onClick={() => handleFilterClick('pending_verification')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all active:scale-95 flex items-center gap-1.5 ${
+              filter === 'pending_verification' 
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-md shadow-emerald-500/10' 
+                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Needs Verification ({awaitingVerification.length})</span>
+          </button>
+          <button
+            onClick={() => handleFilterClick('urgent')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all active:scale-95 ${
+              filter === 'urgent' 
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm' 
+                : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+            }`}
+          >
+            Urgent Only
+          </button>
+
+          {/* Quick Report Physical Issue Button */}
+          <button
+            onClick={onOpenReport}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black shadow-md shadow-cyan-500/20 active:scale-95 transition-all whitespace-nowrap ml-1"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Report</span>
+          </button>
         </div>
       </div>
 
-      {/* Complaints List with 3D Tilt Cards & Staggered Motion */}
+      {/* Category Filter Chips (from ref1) */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0 mr-1">Category:</span>
+        {[
+          { id: 'all', label: 'All', icon: null },
+          { id: 'water', label: 'Water', icon: LifeBuoy },
+          { id: 'electrical', label: 'Electricity', icon: Zap },
+          { id: 'network', label: 'Wi-Fi', icon: Wifi },
+          { id: 'cleanliness', label: 'Cleanliness', icon: Sparkles },
+          { id: 'classroom', label: 'Classroom', icon: Building2 },
+          { id: 'hostel', label: 'Hostel', icon: Home },
+          { id: 'food', label: 'Food', icon: Coffee },
+          { id: 'safety', label: 'Safety', icon: ShieldAlert },
+        ].map(cat => {
+          const Icon = cat.icon
+          const isActive = categoryFilter === cat.id
+          return (
+            <button
+              key={cat.id}
+              onClick={() => { playTick(); setCategoryFilter(cat.id) }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs whitespace-nowrap transition-all active:scale-95 ${
+                isActive
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400 font-bold shadow-sm shadow-cyan-500/10'
+                  : 'bg-white/[0.03] text-slate-400 hover:text-slate-200 border-white/10 hover:bg-white/[0.07]'
+              }`}
+            >
+              {Icon && <Icon className="w-3.5 h-3.5" />}
+              <span>{cat.label}</span>
+            </button>
+          )
+        })}
+      </div>
       {filteredComplaints.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          style={{
-            textAlign: 'center',
-            padding: '4rem 2rem',
-            background: 'rgba(15, 23, 42, 0.5)',
-            backdropFilter: 'blur(12px)',
-            borderRadius: 'var(--radius-xl)',
-            border: '1px dashed var(--border-medium)'
-          }}
-        >
-          <AlertCircle size={46} color="var(--text-muted)" style={{ margin: '0 auto 1rem' }} />
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.4rem' }}>
-            No complaints match the criteria
-          </h3>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-            Try adjusting your search query or clear the active filter tags.
+        <div className="p-12 text-center glass-panel rounded-3xl border-white/10">
+          <CheckCircle2 className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <h4 className="text-sm font-bold text-white mb-1">No matching tickets found</h4>
+          <p className="text-xs text-slate-400">
+            {filter === 'pending_verification' 
+              ? 'Great news! All campus repairs have been verified and closed.' 
+              : 'Try adjusting your search terms or filter selections.'}
           </p>
-          <button onClick={onOpenReportModal} className="btn-primary">
-            <PlusCircle size={18} /> Report an Issue
-          </button>
-        </motion.div>
+        </div>
       ) : (
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-            gap: '1.5rem'
-          }}
-        >
-          {filteredComplaints.map((c) => (
-            <motion.div key={c.id} variants={itemVariants}>
-              <ComplaintCard
-                complaint={c}
-                onSelect={onSelectComplaint}
-                onVerify={onVerifyResolution}
-              />
-            </motion.div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredComplaints.map(comp => (
+            <ComplaintCard
+              key={comp.id}
+              complaint={comp}
+              onSelect={onSelectComplaint}
+              onUpvote={onUpvote}
+              currentUser={currentUser}
+              onVerify={handleOpenVerification}
+            />
           ))}
-        </motion.div>
+        </div>
       )}
+
+      {/* Dedicated Student Physical Verification Modal */}
+      {verifyingComplaint && (
+        <StudentVerificationModal
+          complaint={verifyingComplaint}
+          currentUser={currentUser}
+          onClose={() => setVerifyingComplaint(null)}
+          onConfirmFixed={(id, feedback) => {
+            if (onConfirmFixed) {
+              onConfirmFixed(id, feedback)
+            }
+          }}
+          onReopenIssue={(id, reason) => {
+            if (onReopenIssue) {
+              onReopenIssue(id, reason)
+            }
+          }}
+        />
+      )}
+
     </div>
   )
 }

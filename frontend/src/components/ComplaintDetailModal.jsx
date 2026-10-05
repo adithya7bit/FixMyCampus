@@ -1,421 +1,331 @@
-import React, { useState } from 'react'
-import { motion } from 'motion/react'
+import React, { useState, useEffect } from 'react'
 import { 
   X, 
   MapPin, 
   Clock, 
   CheckCircle2, 
   AlertCircle, 
-  ThumbsUp, 
-  Share2, 
-  ShieldAlert, 
+  RotateCcw, 
+  Sparkles, 
+  Send, 
   User, 
-  Calendar,
-  MessageSquare,
-  Sparkles,
-  Camera,
-  RotateCcw,
-  Check
+  Image as ImageIcon,
+  Navigation
 } from 'lucide-react'
 import confetti from 'canvas-confetti'
+import { playSuccess, playTick, playAlert } from '../services/soundFx'
 
-export default function ComplaintDetailModal({
-  isOpen,
-  onClose,
-  complaint,
-  currentUser,
-  activeRole,
-  onVerifyResolution,
-  onUpvote,
-  onOpenStatusUpdate
+export default function ComplaintDetailModal({ 
+  complaint, 
+  onClose, 
+  currentUser, 
+  onConfirmFixed, 
+  onReopenIssue,
+  onAdminUpdate,
+  onGetDirections
 }) {
-  const [reopenMode, setReopenMode] = useState(false)
   const [reopenReason, setReopenReason] = useState('')
-  const [confirmationNote, setConfirmationNote] = useState('')
-  const [isProcessing, setIsProcessing] = useState(false)
+  const [showReopenBox, setShowReopenBox] = useState(false)
+  const [adminStatus, setAdminStatus] = useState(complaint.status)
+  const [adminNotes, setAdminNotes] = useState(complaint.admin_notes || '')
+  const [assignedTo, setAssignedTo] = useState(complaint.assigned_to || '')
 
-  if (!isOpen || !complaint) return null
+  if (!complaint) return null
 
-  const isReporter = currentUser?.id === complaint.reporter_id || activeRole === 'student'
-  const isResolved = complaint.status === 'resolved'
-  const isEscalated = complaint.status === 'escalated' || complaint.is_escalated
-  const hasUpvoted = complaint.upvoter_ids?.includes(currentUser?.id)
+  const isReporter = currentUser.id === complaint.reporter_id || currentUser.role === 'student'
+  const isAdmin = currentUser.role === 'admin'
 
-  const handleConfirmFix = async () => {
-    setIsProcessing(true)
+  const handleConfirmFixed = () => {
+    playSuccess()
+    // Fire festive celebration confetti
     try {
-      await onVerifyResolution(complaint.id, {
-        action: 'confirm',
-        verified_by_name: currentUser?.name || 'Alex Rivera',
-        note: confirmationNote.trim() || 'Verified by student: Physical issue satisfactorily inspected and repaired.'
-      })
-
-      // Celebration Confetti!
       confetti({
-        particleCount: 120,
+        particleCount: 100,
         spread: 70,
         origin: { y: 0.6 }
       })
-      onClose()
-    } catch (err) {
-      alert(`Error verifying resolution: ${err.message}`)
-    } finally {
-      setIsProcessing(false)
-    }
+    } catch (e) {}
+    onConfirmFixed(complaint.id, {
+      rating: 5,
+      note: 'Verified physically fixed in person via ticket inspector.'
+    })
   }
 
-  const handleReopen = async (e) => {
-    e.preventDefault()
+  const handleReopen = () => {
     if (!reopenReason.trim()) return
-
-    setIsProcessing(true)
-    try {
-      await onVerifyResolution(complaint.id, {
-        action: 'reopen',
-        verified_by_name: currentUser?.name || 'Alex Rivera',
-        reopen_reason: reopenReason.trim()
-      })
-      setReopenMode(false)
-      onClose()
-    } catch (err) {
-      alert(`Error reopening ticket: ${err.message}`)
-    } finally {
-      setIsProcessing(false)
-    }
+    playAlert()
+    onReopenIssue(complaint.id, reopenReason)
+    setShowReopenBox(false)
   }
+
+  const handleSaveAdmin = () => {
+    playSuccess()
+    onAdminUpdate(complaint.id, {
+      status: adminStatus,
+      admin_notes: adminNotes,
+      assigned_to: assignedTo
+    })
+  }
+
+  // Prevent background scroll while modal is mounted
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = originalOverflow
+    }
+  }, [])
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.94, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.94 }}
-        transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-        className="modal-content"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 740 }}
+    <div 
+      data-lenis-prevent="true"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+    >
+      <div 
+        data-lenis-prevent="true"
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto overscroll-contain glass-panel bg-[#0d1322] border-white/15 p-6 sm:p-8 rounded-3xl shadow-2xl focus:outline-none"
       >
-        {/* Header */}
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <span style={{ 
-              fontFamily: 'var(--font-mono)', 
-              fontSize: '0.85rem', 
-              fontWeight: 700, 
-              color: '#38bdf8',
-              background: 'rgba(56, 189, 248, 0.1)',
-              padding: '0.25rem 0.6rem',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid rgba(56, 189, 248, 0.25)'
-            }}>
+        
+        {/* Header with Ticket Tag & Close Button */}
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <span className="mono-tag text-cyan-400 bg-cyan-500/10 px-2.5 py-1 rounded-md border border-cyan-500/20 font-bold">
               {complaint.ticket_number}
             </span>
-
-            <span className={`badge badge-${complaint.priority}`}>
-              {complaint.priority} priority
-            </span>
-
-            <span className={`badge badge-status-${complaint.status}`}>
-              {complaint.status.replace('_', ' ')}
-            </span>
-
-            {isEscalated && (
-              <span className="badge badge-status-escalated">
-                ⚠️ SLA Breached (Auto-Escalated)
-              </span>
-            )}
+            <h2 className="text-xl sm:text-2xl font-bold text-white mt-2">
+              {complaint.title}
+            </h2>
           </div>
-
-          <button onClick={onClose} style={{ color: 'var(--text-muted)' }}>
-            <X size={20} />
+          <button 
+            onClick={onClose}
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="modal-body">
-          {/* Title & Description */}
-          <h2 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '0.5rem', color: '#ffffff' }}>
-            {complaint.title}
-          </h2>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', color: 'var(--text-secondary)', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <User size={14} color="#60a5fa" />
-              <span>Reported by: <strong style={{ color: '#ffffff' }}>{complaint.reporter_name}</strong></span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <MapPin size={14} color="#f97316" />
-              <span>{complaint.location_building} ({complaint.location_floor} - {complaint.location_room})</span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <Clock size={14} color="#94a3b8" />
-              <span>{new Date(complaint.created_at).toLocaleString()}</span>
-            </div>
+        {/* Location & Meta Pills */}
+        <div className="flex flex-wrap items-center gap-2 mb-6 text-xs text-slate-300">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/5">
+            <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+            <span>{complaint.location_building} • {complaint.location_floor} • {complaint.location_room}</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/5">
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>{complaint.sla_hours}h Target SLA</span>
+          </div>
+          <div className="px-3 py-1.5 rounded-xl bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-medium">
+            {complaint.category}
           </div>
 
-          <div style={{
-            padding: '1rem',
-            background: 'rgba(15, 23, 42, 0.7)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border-subtle)',
-            fontSize: '0.9rem',
-            lineHeight: 1.6,
-            marginBottom: '1.25rem'
-          }}>
+          {onGetDirections && (
+            <button
+              onClick={() => {
+                playTick()
+                onGetDirections(complaint)
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-semibold transition-all active:scale-95 shadow-sm ml-auto"
+              title="View Turn-by-Turn Campus Directions"
+            >
+              <Navigation className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Get Directions</span>
+            </button>
+          )}
+        </div>
+
+        {/* Issue Description */}
+        <div className="mb-6">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+            Detailed Issue Report
+          </h4>
+          <p className="text-sm text-slate-200 bg-white/[0.02] p-4 rounded-2xl border border-white/5 leading-relaxed">
             {complaint.description}
-          </div>
+          </p>
+        </div>
 
-          {/* Photo Attachments */}
-          {complaint.attachments && complaint.attachments.length > 0 && (
-            <div style={{ marginBottom: '1.25rem' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                ATTACHED EVIDENCE ({complaint.attachments.length})
+        {/* Photos (Reported Photo & Resolution Proof) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          {complaint.photo_url && (
+            <div>
+              <div className="text-xs font-semibold text-slate-400 mb-1.5 flex items-center gap-1">
+                <ImageIcon className="w-3.5 h-3.5 text-slate-400" />
+                <span>Student Attachment</span>
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                {complaint.attachments.map((img, idx) => (
-                  <div key={idx} style={{
-                    width: 140,
-                    height: 100,
-                    borderRadius: 'var(--radius-md)',
-                    overflow: 'hidden',
-                    border: '1px solid var(--border-medium)',
-                    position: 'relative'
-                  }}>
-                    <img src={img} alt="Attachment" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                ))}
-              </div>
+              <img 
+                src={complaint.photo_url} 
+                alt="Reported problem" 
+                className="w-full h-44 object-cover rounded-2xl border border-white/10 shadow-md"
+              />
             </div>
           )}
 
-          {/* Admin Resolution Note & Proof */}
-          {complaint.resolution_note && (
-            <div style={{
-              padding: '1rem',
-              borderRadius: 'var(--radius-lg)',
-              background: 'rgba(16, 185, 129, 0.08)',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              marginBottom: '1.25rem'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#34d399', fontWeight: 700, fontSize: '0.825rem', marginBottom: '0.35rem' }}>
-                <CheckCircle2 size={16} />
-                <span>OFFICIAL RESOLUTION NOTE (By {complaint.assigned_to_name || 'Department Admin'})</span>
+          {complaint.resolution_photo && (
+            <div>
+              <div className="text-xs font-semibold text-emerald-400 mb-1.5 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Technician Resolution Proof</span>
               </div>
-              <p style={{ fontSize: '0.875rem', color: '#e2e8f0', lineHeight: 1.5 }}>
-                {complaint.resolution_note}
-              </p>
-
-              {complaint.resolution_photo && (
-                <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <img 
-                    src={complaint.resolution_photo} 
-                    alt="Resolution Proof" 
-                    style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(16, 185, 129, 0.4)' }} 
-                  />
-                  <span style={{ fontSize: '0.75rem', color: '#6ee7b7' }}>Verified Repair Photo Attached</span>
-                </div>
-              )}
+              <img 
+                src={complaint.resolution_photo} 
+                alt="Resolution proof" 
+                className="w-full h-44 object-cover rounded-2xl border border-emerald-500/30 shadow-md"
+              />
             </div>
           )}
+        </div>
 
-          {/* CLOSED LOOP: STUDENT RESOLUTION VERIFICATION PANEL */}
-          {isResolved && (
-            <div className="verification-box">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                <Sparkles size={20} color="#10b981" />
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#34d399' }}>
-                  Action Required: Verify Resolution (Closed-Loop)
-                </h3>
+        {/* CLOSED-LOOP VERIFICATION CALLOUT (For Students) */}
+        {complaint.status === 'resolved' && (
+          <div className="mb-6 p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-5 h-5 text-emerald-400" />
+              <h4 className="font-bold text-sm text-emerald-300">
+                Action Required: Closed-Loop Verification
+              </h4>
+            </div>
+            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+              Maintenance marked this issue as resolved. Please verify if the physical infrastructure is actually functioning.
+            </p>
+
+            {complaint.resolution_notes && (
+              <div className="text-xs bg-black/40 p-3 rounded-xl border border-emerald-500/20 text-slate-300 mb-4">
+                <strong className="text-emerald-400">Technician Note:</strong> {complaint.resolution_notes}
               </div>
-              <p style={{ fontSize: '0.825rem', color: '#cbd5e1', marginBottom: '1rem' }}>
-                The department has marked this problem as resolved. As the student who reported it, you hold the authority to close this ticket or reopen it if the fix is inadequate.
-              </p>
+            )}
 
-              {!reopenMode ? (
-                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {!showReopenBox ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleConfirmFixed}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-all"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Confirm Fixed (Close Loop)</span>
+                </button>
+                <button
+                  onClick={() => setShowReopenBox(true)}
+                  className="py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 text-rose-300 border border-rose-500/30 font-semibold text-xs flex items-center gap-2 transition-all"
+                >
+                  <RotateCcw className="w-4 h-4 text-rose-400" />
+                  <span>Still Broken? Reopen</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <textarea
+                  value={reopenReason}
+                  onChange={(e) => setReopenReason(e.target.value)}
+                  placeholder="Explain why the issue is still unresolved (e.g. still leaking, door still jammed)..."
+                  className="w-full bg-[#0a0f1d] border border-rose-500/40 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  rows={2}
+                />
+                <div className="flex items-center gap-2 justify-end">
                   <button
-                    onClick={handleConfirmFix}
-                    disabled={isProcessing}
-                    className="btn-success"
-                    style={{ flex: 1 }}
+                    onClick={() => setShowReopenBox(false)}
+                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-white"
                   >
-                    <Check size={16} />
-                    Confirm Fixed (Close Ticket)
+                    Cancel
                   </button>
-
                   <button
-                    onClick={() => setReopenMode(true)}
-                    disabled={isProcessing}
-                    style={{
-                      background: 'rgba(239, 68, 68, 0.15)',
-                      color: '#f87171',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      padding: '0.6rem 1.2rem',
-                      borderRadius: 'var(--radius-md)',
-                      fontWeight: 600,
-                      fontSize: '0.875rem',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.5rem'
-                    }}
+                    onClick={handleReopen}
+                    className="px-4 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs flex items-center gap-1.5"
                   >
-                    <RotateCcw size={16} />
-                    Reopen (Still Broken)
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Submit & Alert Head</span>
                   </button>
                 </div>
-              ) : (
-                <form onSubmit={handleReopen} style={{ marginTop: '0.75rem' }}>
-                  <label className="form-label" style={{ color: '#fca5a5' }}>
-                    Why is this issue still unresolved? *
-                  </label>
-                  <textarea
-                    className="form-textarea"
-                    rows={2}
-                    placeholder="e.g. The leak started dripping again after 20 minutes, floor remains slippery..."
-                    value={reopenReason}
-                    onChange={(e) => setReopenReason(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => setReopenMode(false)}
-                      disabled={isProcessing}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="btn-urgent"
-                      disabled={isProcessing || !reopenReason.trim()}
-                    >
-                      Submit Reopen Reason
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
-
-          {/* Reopen Warning Banner */}
-          {complaint.status === 'reopened' && complaint.reopen_reason && (
-            <div style={{
-              padding: '0.9rem',
-              borderRadius: 'var(--radius-md)',
-              background: 'rgba(239, 68, 68, 0.12)',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              marginBottom: '1.25rem'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#f87171', fontWeight: 700, fontSize: '0.8rem', marginBottom: '0.25rem' }}>
-                <RotateCcw size={15} />
-                <span>TICKET REOPENED BY STUDENT</span>
               </div>
-              <p style={{ fontSize: '0.825rem', color: '#fecaca' }}>
-                "{complaint.reopen_reason}"
-              </p>
-            </div>
-          )}
-
-          {/* Upvote & Community Action Bar */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0.75rem 1rem',
-            background: 'rgba(255, 255, 255, 0.03)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--border-subtle)',
-            marginBottom: '1.5rem'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <button
-                onClick={() => onUpvote(complaint.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  padding: '0.4rem 0.85rem',
-                  borderRadius: 'var(--radius-md)',
-                  background: hasUpvoted ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  border: hasUpvoted ? '1px solid #3b82f6' : '1px solid var(--border-medium)',
-                  color: hasUpvoted ? '#60a5fa' : 'var(--text-secondary)',
-                  fontWeight: 600,
-                  fontSize: '0.825rem'
-                }}
-              >
-                <ThumbsUp size={15} />
-                <span>{hasUpvoted ? 'Upvoted' : 'Upvote Issue'}</span>
-                <span style={{
-                  padding: '0.1rem 0.4rem',
-                  borderRadius: '999px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  fontSize: '0.75rem'
-                }}>
-                  {complaint.upvotes || 1}
-                </span>
-              </button>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {complaint.upvotes || 1} student(s) confirmed this issue
-              </span>
-            </div>
-
-            {activeRole === 'admin' && (
-              <button
-                onClick={() => {
-                  onClose()
-                  onOpenStatusUpdate(complaint)
-                }}
-                className="btn-primary"
-                style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem' }}
-              >
-                Update Status / Assign
-              </button>
             )}
           </div>
+        )}
 
-          {/* STATUS HISTORY TIMELINE */}
-          <div>
-            <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '1rem', letterSpacing: '0.04em' }}>
-              AUDIT TIMELINE & STATUS LIFECYCLE
+        {/* ADMIN DISPATCH CONTROLS (If logged in as admin) */}
+        {isAdmin && (
+          <div className="mb-6 p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30">
+            <h4 className="font-bold text-sm text-amber-300 mb-3 flex items-center gap-2">
+              <User className="w-4 h-4 text-amber-400" />
+              <span>Admin Dispatch & Work Order Update</span>
             </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                  Ticket Status
+                </label>
+                <select
+                  value={adminStatus}
+                  onChange={(e) => setAdminStatus(e.target.value)}
+                  className="w-full bg-[#0a0f1d] border border-white/15 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                >
+                  <option value="pending">Pending Triage</option>
+                  <option value="assigned">Assigned to Crew</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="resolved">Mark Resolved (Awaits Student)</option>
+                  <option value="closed">Closed & Archived</option>
+                </select>
+              </div>
 
-            <div className="timeline">
-              {(complaint.history || []).map((step, idx) => (
-                <div key={idx} className="timeline-item">
-                  <div className={`timeline-dot ${step.status === 'escalated' ? 'escalated' : (step.status === 'resolved' || step.status === 'closed' ? 'resolved' : '')}`} />
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.2rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span className={`badge badge-status-${step.status}`}>
-                        {step.status.replace('_', ' ')}
-                      </span>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ffffff' }}>
-                        {step.changed_by_name} ({step.changed_by_role})
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      {new Date(step.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(step.timestamp).toLocaleDateString()}
-                    </span>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                  Assign Technician / Contractor
+                </label>
+                <input
+                  type="text"
+                  value={assignedTo}
+                  onChange={(e) => setAssignedTo(e.target.value)}
+                  placeholder="Technician name..."
+                  className="w-full bg-[#0a0f1d] border border-white/15 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                />
+              </div>
+            </div>
+
+            <div className="mb-3">
+              <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                Internal Maintenance Log & Dispatch Notes
+              </label>
+              <textarea
+                value={adminNotes}
+                onChange={(e) => setAdminNotes(e.target.value)}
+                placeholder="Log parts used, inspection results, or technician ETA..."
+                className="w-full bg-[#0a0f1d] border border-white/15 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                rows={2}
+              />
+            </div>
+
+            <button
+              onClick={handleSaveAdmin}
+              className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow-md"
+            >
+              Update Work Order & Notify Student
+            </button>
+          </div>
+        )}
+
+        {/* Audit Trail Timeline */}
+        {complaint.updates && complaint.updates.length > 0 && (
+          <div>
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+              Live Lifecycle Audit Trail
+            </h4>
+            <div className="space-y-2.5 border-l-2 border-white/10 pl-4 ml-2">
+              {complaint.updates.map((up, idx) => (
+                <div key={idx} className="relative text-xs">
+                  <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-cyan-400 ring-4 ring-[#0d1322]" />
+                  <div className="font-semibold text-slate-200">
+                    {up.author} • <span className="text-[10px] text-slate-500 font-normal">{new Date(up.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '0.2rem' }}>
-                    {step.note}
-                  </p>
+                  <div className="text-slate-400 mt-0.5">{up.message}</div>
                 </div>
               ))}
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Footer */}
-        <div className="modal-footer">
-          <button className="btn-secondary" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

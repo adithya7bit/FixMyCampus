@@ -1,273 +1,187 @@
 import React, { useState } from 'react'
 import { 
-  MapPin, 
+  Building2, 
   AlertTriangle, 
   Flame, 
-  Layers, 
-  Building2, 
-  ChevronRight, 
-  ShieldCheck, 
-  Clock 
+  ShieldAlert, 
+  BarChart3, 
+  TrendingUp, 
+  CheckCircle2, 
+  Clock,
+  Compass,
+  ArrowUpRight
 } from 'lucide-react'
+import { CAMPUS_BUILDINGS } from '../services/mockData'
+import { playTick } from '../services/soundFx'
 
-export default function CampusHeatmap({ heatmapData, onSelectComplaintById }) {
-  const [selectedBuilding, setSelectedBuilding] = useState(heatmapData[0]?.building || 'Engineering Block A')
+export default function CampusHeatmap({ 
+  complaints = [],
+  onSelectComplaint,
+  onOpenMap
+}) {
+  const [selectedBuilding, setSelectedBuilding] = useState(CAMPUS_BUILDINGS[0])
 
-  const currentBuilding = heatmapData.find(b => b.building === selectedBuilding) || heatmapData[0]
-
-  const getHeatColor = (level) => {
-    switch (level) {
-      case 'critical': return '#ef4444' // Red
-      case 'warning': return '#f97316'  // Orange
-      case 'moderate': return '#f59e0b' // Yellow
-      default: return '#10b981'         // Green
+  // Count open issues per building
+  const getBuildingStats = (buildingName) => {
+    const list = complaints.filter(c => c.location_building === buildingName)
+    const active = list.filter(c => c.status !== 'closed')
+    const urgent = list.filter(c => c.priority === 'urgent' && c.status !== 'closed')
+    return {
+      total: list.length,
+      active: active.length,
+      urgent: urgent.length,
+      issues: list
     }
   }
 
-  const getHeatGlow = (level) => {
-    switch (level) {
-      case 'critical': return 'rgba(239, 68, 68, 0.4)'
-      case 'warning': return 'rgba(249, 115, 22, 0.35)'
-      case 'moderate': return 'rgba(245, 158, 11, 0.3)'
-      default: return 'rgba(16, 185, 129, 0.25)'
-    }
+  const getRiskColor = (activeCount, urgentCount) => {
+    if (urgentCount > 0) return 'border-rose-500/50 bg-rose-500/15 text-rose-300 shadow-sm shadow-rose-500/20'
+    if (activeCount >= 2) return 'border-amber-500/50 bg-amber-500/15 text-amber-300'
+    return 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
+  }
+
+  const selectedStats = getBuildingStats(selectedBuilding.name)
+
+  const handleSelectBuilding = (b) => {
+    playTick()
+    setSelectedBuilding(b)
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '1.5rem', alignItems: 'start' }}>
-      {/* Visual Interactive Campus Blueprint Map */}
-      <div className="glass-card" style={{ padding: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ffffff' }}>
-              Campus Problem Density Heatmap
-            </h3>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Spot recurring infrastructure failure hotspots across university grounds
-            </p>
+    <div className="space-y-6 animate-in fade-in duration-200">
+      
+      {/* Title & Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 glass-panel rounded-3xl border-indigo-500/20 bg-gradient-to-r from-indigo-500/10 via-[#0d1322] to-transparent">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-indigo-400" />
+              <span>Campus Problem Density Heatmap</span>
+            </h2>
+            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              GEOSPATIAL STRESS INDEX
+            </span>
           </div>
-
-          {/* Legend */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.7rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} /> Critical
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f97316' }} /> Warning
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} /> Normal
-            </div>
-          </div>
+          <p className="text-xs text-slate-300">
+            Real-time failure hotspots and infrastructure stress across Bannari Amman & KPR campus facilities.
+          </p>
         </div>
 
-        {/* Campus Map Graphic Area */}
-        <div style={{
-          position: 'relative',
-          height: 420,
-          background: 'radial-gradient(circle at center, #111e38 0%, #0a1020 100%)',
-          borderRadius: 'var(--radius-lg)',
-          border: '1px solid var(--border-medium)',
-          overflow: 'hidden',
-          boxShadow: 'inset 0 0 30px rgba(0, 0, 0, 0.6)'
-        }}>
-          {/* Subtle Grid Lines */}
-          <div style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage: 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)',
-            backgroundSize: '30px 30px'
-          }} />
-
-          {/* Campus Zones Watermark */}
-          <div style={{ position: 'absolute', top: 15, left: 20, fontSize: '0.7rem', fontWeight: 700, color: 'rgba(255, 255, 255, 0.15)', letterSpacing: '0.1em' }}>
-            NORTH ACADEMIC QUADRANGLE
+        <div className="flex items-center gap-3 text-xs bg-black/40 px-4 py-2.5 rounded-2xl border border-white/10">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+            <span className="text-slate-300">Urgent Hazard</span>
           </div>
-          <div style={{ position: 'absolute', bottom: 15, right: 20, fontSize: '0.7rem', fontWeight: 700, color: 'rgba(255, 255, 255, 0.15)', letterSpacing: '0.1em' }}>
-            SOUTH RESIDENTIAL COMMONS
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+            <span className="text-slate-300">Active Issues</span>
           </div>
-
-          {/* Interactive Building Nodes */}
-          {heatmapData.map((item) => {
-            const isSelected = selectedBuilding === item.building
-            const heatColor = getHeatColor(item.heat_level)
-            const heatGlow = getHeatGlow(item.heat_level)
-
-            return (
-              <div
-                key={item.building}
-                onClick={() => setSelectedBuilding(item.building)}
-                style={{
-                  position: 'absolute',
-                  left: `${item.coords.x}%`,
-                  top: `${item.coords.y}%`,
-                  transform: 'translate(-50%, -50%)',
-                  cursor: 'pointer',
-                  zIndex: isSelected ? 20 : 10,
-                  transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
-                }}
-              >
-                {/* Heat Ring / Pulse */}
-                <div style={{
-                  position: 'relative',
-                  width: isSelected ? 58 : 46,
-                  height: isSelected ? 58 : 46,
-                  borderRadius: 'var(--radius-md)',
-                  background: isSelected ? '#1e293b' : 'rgba(15, 23, 42, 0.9)',
-                  border: `2px solid ${heatColor}`,
-                  boxShadow: `0 0 20px ${heatGlow}`,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s ease'
-                }}>
-                  {item.urgent_complaints > 0 && (
-                    <span style={{
-                      position: 'absolute',
-                      top: -6,
-                      right: -6,
-                      width: 16,
-                      height: 16,
-                      borderRadius: '50%',
-                      background: '#ef4444',
-                      color: '#ffffff',
-                      fontSize: '0.65rem',
-                      fontWeight: 800,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 0 6px #ef4444'
-                    }}>
-                      !
-                    </span>
-                  )}
-                  <Building2 size={isSelected ? 20 : 16} color={heatColor} />
-                  <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#ffffff' }}>
-                    {item.total_complaints}
-                  </span>
-                </div>
-
-                {/* Building Name Tag */}
-                <div style={{
-                  position: 'absolute',
-                  top: '110%',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  whiteSpace: 'nowrap',
-                  fontSize: '0.68rem',
-                  fontWeight: 600,
-                  color: isSelected ? '#ffffff' : '#94a3b8',
-                  background: 'rgba(0, 0, 0, 0.75)',
-                  padding: '0.15rem 0.45rem',
-                  borderRadius: '4px',
-                  border: isSelected ? '1px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.08)'
-                }}>
-                  {item.building}
-                </div>
-              </div>
-            )
-          })}
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+            <span className="text-slate-300">Nominal</span>
+          </div>
         </div>
       </div>
 
-      {/* Selected Building Details Breakdown */}
-      {currentBuilding && (
-        <div className="glass-card" style={{ padding: '1.5rem' }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '0.5rem',
-            borderBottom: '1px solid var(--border-subtle)',
-            paddingBottom: '0.75rem'
-          }}>
-            <div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
-                {currentBuilding.zone}
-              </div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#ffffff' }}>
-                {currentBuilding.building}
-              </h3>
-            </div>
+      {/* Grid of Campus Buildings */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {CAMPUS_BUILDINGS.map(b => {
+          const stats = getBuildingStats(b.name)
+          const isSelected = selectedBuilding.id === b.id
 
-            <span className={`badge badge-${currentBuilding.heat_level === 'critical' ? 'urgent' : (currentBuilding.heat_level === 'warning' ? 'high' : 'low')}`}>
-              {currentBuilding.heat_level} heat
-            </span>
-          </div>
-
-          {/* Quick Metrics */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', margin: '1rem 0' }}>
-            <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '0.6rem', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total Issues</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff' }}>{currentBuilding.total_complaints}</div>
-            </div>
-            <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '0.6rem', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Open / Active</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#60a5fa' }}>{currentBuilding.open_complaints}</div>
-            </div>
-            <div style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '0.6rem', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Urgent Flares</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f87171' }}>{currentBuilding.urgent_complaints}</div>
-            </div>
-          </div>
-
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-            Primary Failure Category: <strong style={{ color: '#ffffff' }}>{currentBuilding.top_category}</strong>
-          </div>
-
-          {/* Complaints list in this building */}
-          <div>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', letterSpacing: '0.04em' }}>
-              ACTIVE COMPLAINTS IN THIS BUILDING
-            </div>
-
-            {currentBuilding.complaints.length === 0 ? (
-              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                No active complaints reported in this building.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 260, overflowY: 'auto' }}>
-                {currentBuilding.complaints.map((c) => (
-                  <div
-                    key={c.id}
-                    onClick={() => onSelectComplaintById(c.id)}
-                    style={{
-                      padding: '0.65rem 0.85rem',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid var(--border-subtle)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem' }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: '#93c5fd' }}>
-                          {c.ticket_number}
-                        </span>
-                        <span className={`badge badge-${c.priority}`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem' }}>
-                          {c.priority}
-                        </span>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                          {c.floor}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#ffffff' }}>
-                        {c.title}
-                      </div>
-                    </div>
-
-                    <ChevronRight size={16} color="var(--text-muted)" />
+          return (
+            <div
+              key={b.id}
+              onClick={() => handleSelectBuilding(b)}
+              className={`p-1 rounded-2xl transition-all cursor-pointer group active:scale-[0.985] ${
+                isSelected 
+                  ? 'bg-gradient-to-tr from-indigo-500/30 to-cyan-500/30 ring-2 ring-indigo-500/60 shadow-xl shadow-indigo-500/10' 
+                  : 'bg-white/[0.03] ring-1 ring-white/10 hover:ring-white/20'
+              }`}
+            >
+              <div className="bg-[#0b101c]/95 rounded-[calc(1rem-2px)] p-4 sm:p-5 flex flex-col justify-between h-full border border-white/5">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">
+                    <Building2 className="w-5 h-5 text-indigo-300" />
                   </div>
-                ))}
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getRiskColor(stats.active, stats.urgent)}`}>
+                    {stats.urgent > 0 ? 'Hazard Alert' : `${stats.active} Active Issues`}
+                  </span>
+                </div>
+
+                <h3 className="font-bold text-sm text-white mb-1 group-hover:text-indigo-300 transition-colors">{b.name}</h3>
+                <p className="text-xs text-slate-400 mb-4">{b.floors.length} Floors Monitored</p>
+
+                <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs text-slate-400">
+                  <span>Total Logged: <strong className="text-white font-mono">{stats.total}</strong></span>
+                  {stats.urgent > 0 && (
+                    <span className="text-rose-400 font-bold flex items-center gap-1">
+                      <Flame className="w-3.5 h-3.5 animate-pulse" />
+                      <span>{stats.urgent} Urgent</span>
+                    </span>
+                  )}
+                </div>
               </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Drill-down Drawer for Selected Building */}
+      {selectedBuilding && (
+        <div className="glass-panel p-6 rounded-3xl border-white/15 bg-[#0d1322]/95 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-white/10">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>Sector Audit: {selectedBuilding.name}</span>
+                <span className="text-xs font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+                  Stress Density: {selectedStats.active}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">Physical telemetry and verified incidents registered for this structure</p>
+            </div>
+
+            {onOpenMap && (
+              <button
+                onClick={() => onOpenMap(selectedBuilding)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-all active:scale-95 shrink-0"
+              >
+                <Compass className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Locate on 3D GIS Map</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
             )}
           </div>
+
+          {selectedStats.issues.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400">
+              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-80" />
+              <span className="font-medium text-slate-300">All building infrastructure nominal. Zero open tickets registered for this zone!</span>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {selectedStats.issues.map(iss => (
+                <div 
+                  key={iss.id} 
+                  onClick={() => onSelectComplaint && onSelectComplaint(iss)}
+                  className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 hover:border-cyan-500/30 transition-all cursor-pointer flex items-center justify-between gap-4 text-xs group"
+                >
+                  <div>
+                    <div className="font-bold text-white group-hover:text-cyan-300 transition-colors mb-0.5">{iss.title}</div>
+                    <div className="text-slate-400 text-[11px]">{iss.location_floor} • {iss.location_room}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="mono-tag text-slate-400 text-[10px] bg-white/5 px-2 py-0.5 rounded border border-white/5">{iss.status}</span>
+                    <span className="font-bold text-cyan-300 font-mono text-[11px]">{iss.sla_hours}h SLA</span>
+                    <ArrowUpRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-400 transition-colors" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
+
     </div>
   )
 }

@@ -1,192 +1,210 @@
-import React, { useRef } from 'react'
-import { motion, useMotionValue, useSpring, useTransform } from 'motion/react'
+import React, { useState } from 'react'
 import { 
-  MapPin, 
   Clock, 
+  MapPin, 
   ThumbsUp, 
-  Sparkles, 
-  ChevronRight, 
-  AlertTriangle 
+  CheckCircle2, 
+  AlertTriangle, 
+  ArrowUpRight,
+  Camera,
+  Layers
 } from 'lucide-react'
+import { playUpvote, playTick } from '../services/soundFx'
 
-export default function ComplaintCard({ complaint, onSelect, onVerify }) {
-  const ref = useRef(null)
+export default function ComplaintCard({ 
+  complaint, 
+  onSelect, 
+  onUpvote, 
+  currentUser,
+  onVerify 
+}) {
+  const [upvoted, setUpvoted] = useState(false)
+  
+  // Non-disturbing 3D Spotlight Tilt (Apple / Linear style)
+  const [rotate, setRotate] = useState({ x: 0, y: 0 })
+  const [glarePos, setGlarePos] = useState({ x: 50, y: 50 })
+  const [isHovered, setIsHovered] = useState(false)
 
-  // 3D Tilt Motion Values
-  const x = useMotionValue(0)
-  const y = useMotionValue(0)
-
-  const mouseXSpring = useSpring(x, { stiffness: 350, damping: 25 })
-  const mouseYSpring = useSpring(y, { stiffness: 350, damping: 25 })
-
-  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ['7deg', '-7deg'])
-  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ['-7deg', '7deg'])
-
-  const handleMouseMove = (e) => {
-    if (!ref.current) return
-    const rect = ref.current.getBoundingClientRect()
-    const width = rect.width
-    const height = rect.height
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
-    const xPct = mouseX / width - 0.5
-    const yPct = mouseY / height - 0.5
-    x.set(xPct)
-    y.set(yPct)
+  const handleCardMouseMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / rect.width
+    const y = (e.clientY - rect.top) / rect.height
+    // Gentle ±5 degree maximum tilt
+    setRotate({
+      x: -(y - 0.5) * 7,
+      y: (x - 0.5) * 7
+    })
+    setGlarePos({ x: x * 100, y: y * 100 })
   }
 
-  const handleMouseLeave = () => {
-    x.set(0)
-    y.set(0)
+  const handleCardMouseLeave = () => {
+    setIsHovered(false)
+    setRotate({ x: 0, y: 0 })
   }
 
-  const isUrgent = complaint.priority === 'urgent'
-  const isResolved = complaint.status === 'resolved'
-  const isEscalated = complaint.status === 'escalated' || complaint.is_escalated
+  const getPriorityBadge = (p) => {
+    switch (p) {
+      case 'urgent':
+        return 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-sm shadow-rose-500/10'
+      case 'high':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+      case 'medium':
+        return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+      default:
+        return 'bg-slate-500/20 text-slate-300 border-slate-500/40'
+    }
+  }
+
+  const getStatusBadge = (s) => {
+    switch (s) {
+      case 'resolved':
+        return 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40 shadow-sm shadow-emerald-500/10'
+      case 'in_progress':
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+      case 'assigned':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+      case 'closed':
+        return 'bg-slate-800/60 text-slate-400 border-slate-700/60'
+      default:
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+    }
+  }
+
+  const handleUpvoteClick = (e) => {
+    e.stopPropagation()
+    playUpvote()
+    if (!upvoted) {
+      setUpvoted(true)
+      onUpvote(complaint.id)
+    }
+  }
+
+  const handleCardClick = () => {
+    playTick()
+    onSelect(complaint)
+  }
 
   return (
-    <motion.div
-      ref={ref}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      onClick={() => onSelect(complaint)}
+    /* Outer Shell with 3D Spatial Tilt & Glare */
+    <div 
+      onClick={handleCardClick}
+      onMouseMove={handleCardMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={handleCardMouseLeave}
       style={{
-        rotateX,
-        rotateY,
-        transformStyle: 'preserve-3d',
-        perspective: 1000,
-        cursor: 'pointer'
+        perspective: '1000px',
+        transform: isHovered 
+          ? `rotateX(${rotate.x}deg) rotateY(${rotate.y}deg) translateY(-4px)` 
+          : 'rotateX(0deg) rotateY(0deg) translateY(0px)',
+        transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.4s ease-out'
       }}
-      whileHover={{ scale: 1.02, y: -4 }}
-      whileTap={{ scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-      className="glass-card"
+      className="p-1 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 hover:ring-cyan-500/40 hover:bg-cyan-500/[0.04] cursor-pointer group active:scale-[0.985] shadow-lg shadow-black/40 relative overflow-hidden will-change-transform"
     >
-      <div style={{ transform: 'translateZ(20px)' }}>
-        {/* Top Meta Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-          <span style={{ 
-            fontFamily: 'var(--font-mono)', 
-            fontSize: '0.75rem', 
-            fontWeight: 700, 
-            color: '#38bdf8',
-            background: 'rgba(56, 189, 248, 0.1)',
-            padding: '0.2rem 0.5rem',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid rgba(56, 189, 248, 0.25)'
-          }}>
-            {complaint.ticket_number}
-          </span>
+      {/* Specular Spotlight Glare */}
+      {isHovered && (
+        <div 
+          className="absolute inset-0 pointer-events-none rounded-2xl transition-opacity duration-150 z-20"
+          style={{
+            background: `radial-gradient(circle 220px at ${glarePos.x}% ${glarePos.y}%, rgba(6, 182, 212, 0.14), transparent 75%)`
+          }}
+        />
+      )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span className={`badge badge-${complaint.priority} ${isUrgent ? 'pulse-urgent' : ''}`}>
-              {complaint.priority}
+      {/* Inner Core with Spatial Depth */}
+      <div 
+        className="bg-[#0b101c]/95 rounded-[calc(1rem-2px)] p-4 sm:p-5 flex flex-col justify-between h-full border border-white/5 group-hover:border-cyan-500/20 transition-all relative z-10"
+        style={{ transformStyle: 'preserve-3d' }}
+      >
+        
+        {/* Top Meta Bar */}
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <span className="mono-tag text-cyan-400 font-bold text-[11px] bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/25">
+              {complaint.ticket_number}
             </span>
-            <span className={`badge badge-status-${complaint.status}`}>
-              {complaint.status.replace('_', ' ')}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {complaint.photo_url && (
+                <span title="Evidence Photo Attached" className="p-1 rounded bg-white/5 text-slate-400 border border-white/5">
+                  <Camera className="w-3 h-3 text-cyan-400" />
+                </span>
+              )}
+              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getPriorityBadge(complaint.priority)}`}>
+                {complaint.priority}
+              </span>
+              <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getStatusBadge(complaint.status)}`}>
+                {complaint.status.replace('_', ' ')}
+              </span>
+            </div>
           </div>
+
+          {/* Title */}
+          <h3 className="font-bold text-sm sm:text-base text-white group-hover:text-cyan-300 transition-colors mb-2 line-clamp-2 leading-snug">
+            {complaint.title}
+          </h3>
+
+          {/* Description snippet */}
+          <p className="text-xs text-slate-400 mb-4 line-clamp-2 leading-relaxed">
+            {complaint.description}
+          </p>
         </div>
 
-        {/* Title */}
-        <h3 style={{
-          fontSize: '1.05rem',
-          fontWeight: 700,
-          color: '#ffffff',
-          marginBottom: '0.5rem',
-          lineHeight: 1.35
-        }}>
-          {complaint.title}
-        </h3>
-
-        {/* Description snippet */}
-        <p style={{
-          fontSize: '0.825rem',
-          color: 'var(--text-secondary)',
-          lineHeight: 1.5,
-          marginBottom: '1rem',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden'
-        }}>
-          {complaint.description}
-        </p>
-
-        {/* Auto-escalated Alert Tag */}
-        {isEscalated && (
-          <div style={{
-            padding: '0.35rem 0.6rem',
-            borderRadius: 'var(--radius-sm)',
-            background: 'rgba(168, 85, 247, 0.15)',
-            border: '1px solid rgba(168, 85, 247, 0.35)',
-            color: '#d8b4fe',
-            fontSize: '0.72rem',
-            fontWeight: 600,
-            marginBottom: '0.75rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.35rem'
-          }}>
-            <AlertTriangle size={13} color="#a855f7" />
-            <span>⚠️ SLA Breached: Escalated to Director</span>
-          </div>
-        )}
-
-        {/* Resolution Banner */}
-        {isResolved && (
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0.8 }}
-            animate={{ scale: [1, 1.02, 1], opacity: 1 }}
-            transition={{ repeat: Infinity, duration: 2.5 }}
-            style={{
-              padding: '0.5rem 0.75rem',
-              borderRadius: 'var(--radius-md)',
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.15))',
-              border: '1px solid rgba(16, 185, 129, 0.45)',
-              color: '#34d399',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '0.75rem'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Sparkles size={15} />
-              <span>Fix Ready: Verify & Close</span>
+        {/* Verification Notice Banner if in resolved state */}
+        {complaint.status === 'resolved' && (
+          <div className="mb-4 p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/20 via-teal-500/10 to-transparent border border-emerald-500/35 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-[11px] font-bold text-emerald-300">
+                Repair Completed
+              </span>
             </div>
-            <ChevronRight size={15} />
-          </motion.div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                playTick()
+                if (onVerify) {
+                  onVerify(complaint)
+                } else {
+                  onSelect(complaint)
+                }
+              }}
+              className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 shadow-sm transition-all active:scale-95"
+            >
+              <CheckCircle2 className="w-3 h-3" />
+              <span>Verify Fix</span>
+            </button>
+          </div>
         )}
 
         {/* Footer Meta */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingTop: '0.75rem',
-          borderTop: '1px solid var(--border-subtle)',
-          fontSize: '0.75rem',
-          color: 'var(--text-muted)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <MapPin size={13} color="#f97316" />
-            <span style={{ maxWidth: 180, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-              {complaint.location_building}
-            </span>
+        <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+          <div className="flex items-center gap-1.5 truncate max-w-[190px]">
+            <MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="truncate text-slate-300 font-medium">{complaint.location_building}</span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <ThumbsUp size={12} color="#60a5fa" />
-              <span style={{ fontWeight: 600, color: '#cbd5e1' }}>{complaint.upvotes || 1}</span>
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              <span className="font-mono text-[11px] text-slate-400">{complaint.sla_hours}h SLA</span>
             </div>
-            <span>{new Date(complaint.created_at).toLocaleDateString()}</span>
+
+            <button
+              onClick={handleUpvoteClick}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all active:scale-95 ${
+                upvoted 
+                  ? 'bg-cyan-500/25 text-cyan-300 border-cyan-500/40 shadow-sm shadow-cyan-500/20' 
+                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white'
+              }`}
+              title="Upvote / Mark Affected"
+            >
+              <ThumbsUp className={`w-3 h-3 ${upvoted ? 'fill-cyan-300 text-cyan-300' : ''}`} />
+              <span className="font-bold text-[11px]">{complaint.upvotes + (upvoted ? 1 : 0)}</span>
+            </button>
           </div>
         </div>
+
       </div>
-    </motion.div>
+    </div>
   )
 }

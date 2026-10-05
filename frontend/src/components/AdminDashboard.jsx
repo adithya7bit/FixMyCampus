@@ -1,616 +1,320 @@
 import React, { useState } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
 import { 
   ShieldCheck, 
-  AlertTriangle, 
   Clock, 
-  MapPin, 
+  AlertTriangle, 
   UserCheck, 
   CheckCircle2, 
-  BarChart3, 
-  Map, 
-  UtensilsCrossed, 
-  Zap, 
-  Wrench, 
-  Sparkles, 
-  Wifi, 
-  Building, 
-  ShieldAlert,
-  ArrowUpDown,
-  Filter,
-  Check,
-  ChevronRight,
-  Flame,
-  Search,
-  RefreshCw
+  Search, 
+  Filter, 
+  Flame, 
+  ArrowUpRight,
+  Sparkles,
+  Navigation,
+  Wrench,
+  Check
 } from 'lucide-react'
+import TiltCard from './TiltCard'
+import { playTick, playSuccess } from '../services/soundFx'
 
-// Sub-components
-import CampusHeatmap from './CampusHeatmap'
-import FoodHygieneModule from './FoodHygieneModule'
-import AnalyticsDashboard from './AnalyticsDashboard'
+const CAMPUS_WORKERS = [
+  { name: 'Ramesh Kumar', role: 'Plumbing & Pipe Specialist' },
+  { name: 'Marcus Vance', role: 'Chief Electrician' },
+  { name: 'Suresh Babu', role: 'IT & Digital Infrastructure' },
+  { name: 'Elena Rostova', role: 'Facilities Operations' },
+  { name: 'Housekeeping Crew', role: 'Sanitation' }
+]
 
-const DEPT_ICONS = {
-  electrical: Zap,
-  civil_maintenance: Wrench,
-  housekeeping: Sparkles,
-  it_network: Wifi,
-  food_services: UtensilsCrossed,
-  hostel: Building,
-  security: ShieldAlert
-}
-
-export default function AdminDashboard({
-  currentUser,
-  departments,
-  complaints,
-  selectedDepartment,
-  setSelectedDepartment,
+export default function AdminDashboard({ 
+  complaints = [], 
+  currentUser, 
   onSelectComplaint,
-  onOpenStatusUpdate,
-  onRunEscalation,
-  analyticsData,
-  heatmapData,
-  inspections,
-  onRefreshData
+  onGetDirections,
+  onAdminUpdate
 }) {
-  const [activeTab, setActiveTab] = useState('queue') // 'queue', 'heatmap', 'food_hygiene', 'analytics'
-  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [departmentFilter, setDepartmentFilter] = useState(
+    currentUser.role === 'admin' ? currentUser.department_id : 'all'
+  )
   const [statusFilter, setStatusFilter] = useState('all')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isEscalating, setIsEscalating] = useState(false)
 
-  // Filter complaints for admin queue
-  const queueComplaints = complaints.filter(c => {
-    // Dept filter
-    const matchesDept = selectedDepartment === 'all' || c.department_id === selectedDepartment
+  const departments = [
+    { id: 'all', name: 'All Departments' },
+    { id: 'electrical', name: 'Electrical & Power' },
+    { id: 'civil_maintenance', name: 'Civil & Plumbing' },
+    { id: 'it_network', name: 'IT & Digital' },
+    { id: 'food_services', name: 'Food Services' },
+    { id: 'housekeeping', name: 'Housekeeping' },
+    { id: 'security', name: 'Campus Security' }
+  ]
 
-    // Status filter
-    const matchesStatus = statusFilter === 'all' || c.status === statusFilter
-
-    // Priority filter
-    const matchesPriority = priorityFilter === 'all' || c.priority === priorityFilter
-
-    // Search query
-    const matchesSearch = !searchQuery || (
-      c.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.ticket_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.location_building?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.reporter_name?.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-
-    return matchesDept && matchesStatus && matchesPriority && matchesSearch
+  const filteredList = complaints.filter(c => {
+    if (departmentFilter !== 'all' && c.department_id !== departmentFilter) return false
+    if (statusFilter !== 'all' && c.status !== statusFilter) return false
+    return true
   })
 
-  // Priority sorting (Urgent first!)
-  const pOrder = { urgent: 0, high: 1, medium: 2, low: 3 }
-  const sortedQueue = [...queueComplaints].sort((a, b) => {
-    const aP = pOrder[a.priority] ?? 2
-    const bP = pOrder[b.priority] ?? 2
-    if (aP !== bP) return aP - bP
-    return new Date(b.created_at) - new Date(a.created_at)
-  })
+  const urgentCount = filteredList.filter(c => c.priority === 'urgent' && c.status !== 'closed').length
+  const pendingCount = filteredList.filter(c => c.status === 'pending').length
+  const inProgressCount = filteredList.filter(c => c.status === 'assigned' || c.status === 'in_progress').length
+  const resolvedCount = filteredList.filter(c => c.status === 'resolved').length
 
-  const urgentCount = complaints.filter(c => c.priority === 'urgent' && c.status !== 'closed').length
-  const escalatedCount = complaints.filter(c => c.status === 'escalated' || c.is_escalated).length
+  const handleDeptClick = (id) => {
+    playTick()
+    setDepartmentFilter(id)
+  }
 
-  const handleEscalationTrigger = async () => {
-    setIsEscalating(true)
-    try {
-      const res = await onRunEscalation()
-      alert(`SLA Auto-Escalation Engine Executed! ${res.escalated_count} ticket(s) breached SLA and were escalated to Director level.`)
-      onRefreshData()
-    } catch (err) {
-      alert(`Escalation error: ${err.message}`)
-    } finally {
-      setIsEscalating(false)
+  const handleQuickAssign = (comp, workerName) => {
+    playSuccess()
+    if (onAdminUpdate) {
+      onAdminUpdate(comp.id, {
+        assigned_to: workerName,
+        status: 'assigned'
+      })
+    }
+  }
+
+  const handleQuickResolve = (comp) => {
+    playSuccess()
+    if (onAdminUpdate) {
+      onAdminUpdate(comp.id, {
+        status: 'resolved',
+        resolution_notes: `Repaired on-site by ${comp.assigned_to || 'facilities crew'}. Pressure and integrity tests nominal. Pending student verification.`,
+        resolved_at: new Date().toISOString()
+      })
     }
   }
 
   return (
-    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '2rem 1.5rem 4rem' }}>
-      {/* Header and Operational Notice */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        marginBottom: '2rem'
-      }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
-            <span style={{
-              fontSize: '0.75rem',
-              fontWeight: 800,
-              padding: '0.2rem 0.65rem',
-              borderRadius: 'var(--radius-full)',
-              background: 'rgba(124, 58, 237, 0.25)',
-              color: '#d8b4fe',
-              border: '1px solid rgba(168, 85, 247, 0.45)',
-              letterSpacing: '0.05em'
-            }}>
-              CAMPUS OPERATIONS COMMAND
-            </span>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Cross-Department Dispatch & Real-Time Telemetry
-            </span>
+    <div className="space-y-6 animate-in fade-in duration-200">
+      
+      {/* Admin Header & Officer Badge */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 glass-panel rounded-3xl border-amber-500/25 bg-gradient-to-r from-amber-500/15 via-[#0d1322] to-transparent shadow-xl shadow-amber-500/5">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 shadow-inner">
+            <ShieldCheck className="w-6 h-6 text-amber-400" />
           </div>
-
-          <h1 style={{ fontSize: '2.1rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em' }}>
-            Operations Admin Dashboard
-          </h1>
-        </div>
-
-        {/* Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <motion.button
-            whileHover={{ scale: 1.04, y: -2 }}
-            whileTap={{ scale: 0.96 }}
-            onClick={handleEscalationTrigger}
-            disabled={isEscalating}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.55rem',
-              padding: '0.65rem 1.25rem',
-              borderRadius: 'var(--radius-md)',
-              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(124, 58, 237, 0.15))',
-              border: '1px solid rgba(168, 85, 247, 0.5)',
-              color: '#d8b4fe',
-              fontWeight: 700,
-              fontSize: '0.875rem',
-              boxShadow: '0 4px 15px rgba(168, 85, 247, 0.2)'
-            }}
-          >
-            <Clock size={17} />
-            <span>{isEscalating ? 'Evaluating SLAs...' : 'Run SLA Auto-Escalation Engine'}</span>
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.92 }}
-            onClick={onRefreshData}
-            style={{
-              padding: '0.65rem',
-              borderRadius: 'var(--radius-md)',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border-medium)',
-              color: 'var(--text-secondary)'
-            }}
-            title="Refresh All Queue & Analytics Data"
-          >
-            <RefreshCw size={17} />
-          </motion.button>
-        </div>
-      </div>
-
-      {/* SLA Escalation Warning Banner (if breached tickets exist) */}
-      <AnimatePresence>
-        {escalatedCount > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            style={{
-              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(239, 68, 68, 0.2))',
-              border: '1px solid rgba(168, 85, 247, 0.6)',
-              borderRadius: 'var(--radius-xl)',
-              padding: '1.15rem 1.5rem',
-              marginBottom: '2rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '1rem',
-              boxShadow: '0 8px 30px rgba(168, 85, 247, 0.2)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-              <AlertTriangle size={26} color="#f87171" />
-              <div>
-                <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#ffffff' }}>
-                  🚨 {escalatedCount} Complaint(s) Breached SLA Response Threshold
-                </div>
-                <div style={{ fontSize: '0.8rem', color: '#e2e8f0' }}>
-                  Auto-escalated to Campus Operations Director & Chief Engineer. Immediate dispatch required.
-                </div>
-              </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-white">Facilities Operations Command</h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                DISPATCH CONTROL ACTIVE
+              </span>
             </div>
+            <p className="text-xs text-slate-300">
+              Authenticated Officer: <strong className="text-amber-300">{currentUser.name}</strong> • {currentUser.badge || 'Executive Admin'}
+            </p>
+          </div>
+        </div>
 
-            <motion.button
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={() => {
-                setActiveTab('queue')
-                setStatusFilter('escalated')
-              }}
-              style={{
-                fontSize: '0.8rem',
-                fontWeight: 700,
-                padding: '0.5rem 1rem',
-                borderRadius: 'var(--radius-md)',
-                background: '#ef4444',
-                color: '#ffffff',
-                boxShadow: '0 4px 14px rgba(239, 68, 68, 0.4)'
-              }}
-            >
-              Filter Escalated Tickets
-            </motion.button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Main Feature Tabs with Motion layoutId */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem',
-        borderBottom: '1px solid var(--border-medium)',
-        marginBottom: '1.75rem',
-        paddingBottom: '0.5rem',
-        overflowX: 'auto'
-      }}>
-        {[
-          { id: 'queue', label: 'Department Queue', icon: Clock, count: sortedQueue.length },
-          { id: 'heatmap', label: 'Campus Problem Heatmap', icon: Map },
-          { id: 'food_hygiene', label: 'Food Hygiene Audits', icon: UtensilsCrossed, badge: 'Specialized' },
-          { id: 'analytics', label: 'Analytics & SLA Metrics', icon: BarChart3 }
-        ].map((tab) => {
-          const Icon = tab.icon
-          const isActive = activeTab === tab.id
-
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.55rem',
-                padding: '0.75rem 1.35rem',
-                borderRadius: 'var(--radius-lg)',
-                fontWeight: 700,
-                fontSize: '0.9rem',
-                color: isActive ? '#ffffff' : 'var(--text-secondary)',
-                background: 'transparent',
-                border: 'none',
-                whiteSpace: 'nowrap',
-                zIndex: 1
-              }}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="adminTabPill"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: 'var(--radius-lg)',
-                    background: 'rgba(59, 130, 246, 0.15)',
-                    border: '1px solid rgba(59, 130, 246, 0.4)',
-                    boxShadow: '0 4px 16px rgba(59, 130, 246, 0.25)',
-                    zIndex: -1
-                  }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                />
-              )}
-              <Icon size={17} color={isActive ? '#60a5fa' : 'var(--text-muted)'} />
-              <span>{tab.label}</span>
-              {tab.count !== undefined && (
-                <span style={{
-                  fontSize: '0.72rem',
-                  padding: '0.1rem 0.5rem',
-                  borderRadius: '999px',
-                  background: isActive ? '#2563eb' : 'rgba(255, 255, 255, 0.1)',
-                  color: '#ffffff',
-                  fontWeight: 800
-                }}>
-                  {tab.count}
-                </span>
-              )}
-              {tab.badge && (
-                <span style={{
-                  fontSize: '0.68rem',
-                  padding: '0.15rem 0.45rem',
-                  borderRadius: '4px',
-                  background: 'rgba(245, 158, 11, 0.25)',
-                  color: '#fbbf24',
-                  border: '1px solid rgba(245, 158, 11, 0.45)',
-                  fontWeight: 800
-                }}>
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          )
-        })}
+        {/* SLA Auto-Escalation Pill */}
+        <div className="flex items-center gap-3 text-xs bg-black/40 px-4 py-2.5 rounded-2xl border border-white/10">
+          <div className="text-slate-400 font-medium">SLA Thresholds:</div>
+          <div className="font-mono text-rose-400 font-bold">Urgent: 2h</div>
+          <div className="font-mono text-amber-400 font-bold">High: 12h</div>
+          <div className="font-mono text-cyan-400 font-bold">Med: 24h</div>
+        </div>
       </div>
 
-      {/* TAB CONTENT: 1. DEPARTMENT QUEUE */}
-      {activeTab === 'queue' && (
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
+      {/* Admin Queue Counters (3D Tilt & Specular Glare) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <TiltCard 
+          maxTilt={6}
+          glareColor="rgba(245, 158, 11, 0.22)"
+          className="p-1 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 hover:ring-amber-500/40 shadow-lg shadow-black/30"
         >
-          {/* Department Selector Tabs */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            overflowX: 'auto',
-            paddingBottom: '0.75rem',
-            marginBottom: '1.5rem'
-          }}>
+          <div className="bg-[#0b101c]/90 rounded-[calc(1rem-2px)] p-4 border border-white/5 h-full">
+            <div className="text-xs text-slate-400 mb-1">Pending Triage</div>
+            <div className="text-2xl font-black text-amber-300 font-mono">{pendingCount}</div>
+            <div className="text-[10px] text-slate-500 mt-1">Awaiting dispatch</div>
+          </div>
+        </TiltCard>
+
+        <TiltCard 
+          maxTilt={6}
+          glareColor="rgba(6, 182, 212, 0.22)"
+          className="p-1 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 hover:ring-cyan-500/40 shadow-lg shadow-black/30"
+        >
+          <div className="bg-[#0b101c]/90 rounded-[calc(1rem-2px)] p-4 border border-white/5 h-full">
+            <div className="text-xs text-slate-400 mb-1">In Progress</div>
+            <div className="text-2xl font-black text-cyan-300 font-mono">{inProgressCount}</div>
+            <div className="text-[10px] text-slate-500 mt-1">Technicians on site</div>
+          </div>
+        </TiltCard>
+
+        <TiltCard 
+          maxTilt={6}
+          glareColor="rgba(16, 185, 129, 0.22)"
+          className="p-1 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 hover:ring-emerald-500/40 shadow-lg shadow-black/30"
+        >
+          <div className="bg-[#0b101c]/90 rounded-[calc(1rem-2px)] p-4 border border-white/5 h-full">
+            <div className="text-xs text-slate-400 mb-1">Awaiting Student Sign-Off</div>
+            <div className="text-2xl font-black text-emerald-400 font-mono">{resolvedCount}</div>
+            <div className="text-[10px] text-slate-500 mt-1">Closed-loop phase</div>
+          </div>
+        </TiltCard>
+
+        <TiltCard 
+          maxTilt={6}
+          glareColor="rgba(244, 63, 94, 0.22)"
+          className="p-1 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 hover:ring-rose-500/40 shadow-lg shadow-black/30"
+        >
+          <div className="bg-[#0b101c]/90 rounded-[calc(1rem-2px)] p-4 border border-white/5 h-full">
+            <div className="text-xs text-slate-400 mb-1">Escalated Hazards</div>
+            <div className="text-2xl font-black text-rose-400 font-mono">{urgentCount}</div>
+            <div className="text-[10px] text-slate-500 mt-1">Immediate priority</div>
+          </div>
+        </TiltCard>
+      </div>
+
+      {/* Department & Status Filters */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          {departments.map(dep => (
             <button
-              onClick={() => setSelectedDepartment('all')}
-              style={{
-                padding: '0.5rem 1.1rem',
-                borderRadius: 'var(--radius-full)',
-                fontSize: '0.825rem',
-                fontWeight: 700,
-                whiteSpace: 'nowrap',
-                background: selectedDepartment === 'all' ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : 'rgba(255, 255, 255, 0.05)',
-                color: selectedDepartment === 'all' ? '#ffffff' : 'var(--text-secondary)',
-                border: '1px solid var(--border-subtle)',
-                boxShadow: selectedDepartment === 'all' ? '0 4px 12px rgba(37, 99, 235, 0.4)' : 'none'
-              }}
+              key={dep.id}
+              onClick={() => handleDeptClick(dep.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all active:scale-95 ${
+                departmentFilter === dep.id 
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm' 
+                  : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+              }`}
             >
-              All Departments ({complaints.length})
+              {dep.name}
             </button>
+          ))}
+        </div>
 
-            {departments.map((dept) => {
-              const Icon = DEPT_ICONS[dept.id] || Building
-              const isSelected = selectedDepartment === dept.id
-              const countInDept = complaints.filter(c => c.department_id === dept.id).length
+        <select
+          value={statusFilter}
+          onChange={(e) => {
+            playTick()
+            setStatusFilter(e.target.value)
+          }}
+          className="bg-[#0d121f] border border-white/15 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 font-medium"
+        >
+          <option value="all">All Ticket Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="assigned">Assigned</option>
+          <option value="in_progress">In Progress</option>
+          <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
 
-              return (
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  key={dept.id}
-                  onClick={() => setSelectedDepartment(dept.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.45rem',
-                    padding: '0.5rem 1.1rem',
-                    borderRadius: 'var(--radius-full)',
-                    fontSize: '0.825rem',
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                    background: isSelected ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                    color: isSelected ? '#60a5fa' : 'var(--text-secondary)',
-                    border: isSelected ? '1px solid #3b82f6' : '1px solid var(--border-subtle)'
+      {/* Queue Table */}
+      <div className="glass-panel rounded-3xl border-white/10 overflow-hidden shadow-2xl">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-white/[0.04] border-b border-white/10 text-slate-400 uppercase font-semibold text-[10px] tracking-wider">
+              <tr>
+                <th className="py-3.5 px-4">Ticket</th>
+                <th className="py-3.5 px-4">Headline / Issue</th>
+                <th className="py-3.5 px-4">Location</th>
+                <th className="py-3.5 px-4">Priority / SLA</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4">Assigned Worker</th>
+                <th className="py-3.5 px-4 text-right">Quick Dispatch / Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filteredList.map(comp => (
+                <tr 
+                  key={comp.id} 
+                  onClick={() => {
+                    playTick()
+                    onSelectComplaint(comp)
                   }}
+                  className="hover:bg-white/[0.05] cursor-pointer transition-colors group"
                 >
-                  <Icon size={14} />
-                  <span>{dept.name}</span>
-                  <span style={{
-                    fontSize: '0.7rem',
-                    padding: '0.05rem 0.4rem',
-                    borderRadius: '999px',
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    color: '#ffffff'
-                  }}>
-                    {countInDept}
-                  </span>
-                </motion.button>
-              )
-            })}
-          </div>
+                  <td className="py-3.5 px-4 font-mono font-bold text-cyan-400">
+                    {comp.ticket_number}
+                  </td>
+                  <td className="py-3.5 px-4 font-semibold text-white max-w-[220px] truncate group-hover:text-amber-300 transition-colors">
+                    {comp.title}
+                  </td>
+                  <td className="py-3.5 px-4 text-slate-300 whitespace-nowrap">
+                    {comp.location_building} <span className="text-slate-500">• {comp.location_floor}</span>
+                  </td>
+                  <td className="py-3.5 px-4">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase whitespace-nowrap ${
+                      comp.priority === 'urgent' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                    }`}>
+                      {comp.priority} ({comp.sla_hours}h)
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 whitespace-nowrap">
+                    <span className={`mono-tag px-2 py-0.5 rounded border text-[10px] uppercase font-bold ${
+                      comp.status === 'resolved' 
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                        : comp.status === 'closed'
+                        ? 'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                        : comp.status === 'assigned' || comp.status === 'in_progress'
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    }`}>
+                      {comp.status === 'resolved' ? 'Awaiting Sign-Off' : comp.status}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                    {/* Inline Quick Assign worker */}
+                    <select
+                      value={comp.assigned_to || ''}
+                      onChange={(e) => handleQuickAssign(comp, e.target.value)}
+                      className="bg-[#0b101c] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-amber-400 cursor-pointer"
+                    >
+                      <option value="" disabled>Select Technician</option>
+                      {CAMPUS_WORKERS.map(w => (
+                        <option key={w.name} value={w.name}>{w.name} ({w.role})</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1.5">
+                      
+                      {/* Quick Mark Resolved Button (if assigned or in progress) */}
+                      {(comp.status === 'assigned' || comp.status === 'in_progress' || comp.status === 'pending') && (
+                        <button
+                          onClick={() => handleQuickResolve(comp)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold shadow-sm transition-all active:scale-95"
+                          title="Mark work order completed and send for student verification"
+                        >
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span>Resolve</span>
+                        </button>
+                      )}
 
-          {/* Filters Bar */}
-          <div style={{
-            background: 'rgba(15, 23, 42, 0.8)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-xl)',
-            padding: '1.1rem 1.5rem',
-            marginBottom: '1.75rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '1rem'
-          }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: 280 }}>
-              <Search size={18} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }} />
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Search ticket, building, reporter or title..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ paddingLeft: '2.6rem' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-              <select
-                className="form-select"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                style={{ width: 'auto', fontSize: '0.825rem' }}
-              >
-                <option value="all">All Statuses</option>
-                <option value="pending">Pending</option>
-                <option value="assigned">Assigned</option>
-                <option value="in_progress">In Progress</option>
-                <option value="resolved">Resolved</option>
-                <option value="escalated">Escalated</option>
-                <option value="reopened">Reopened</option>
-                <option value="closed">Closed</option>
-              </select>
-
-              <select
-                className="form-select"
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                style={{ width: 'auto', fontSize: '0.825rem' }}
-              >
-                <option value="all">All Priorities</option>
-                <option value="urgent">Urgent</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Queue List with Staggered Motion */}
-          {sortedQueue.length === 0 ? (
-            <div style={{
-              textAlign: 'center',
-              padding: '4rem 2rem',
-              background: 'rgba(15, 23, 42, 0.4)',
-              borderRadius: 'var(--radius-xl)',
-              border: '1px dashed var(--border-medium)'
-            }}>
-              <CheckCircle2 size={42} color="#10b981" style={{ margin: '0 auto 0.75rem' }} />
-              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#ffffff' }}>No matching complaints in queue</div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>All clear or adjust filter parameters.</div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {sortedQueue.map((c) => {
-                const isUrgent = c.priority === 'urgent'
-                const isEscalated = c.status === 'escalated' || c.is_escalated
-
-                return (
-                  <motion.div
-                    key={c.id}
-                    whileHover={{ scale: 1.01, y: -2 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                    className="glass-card"
-                    style={{
-                      padding: '1.25rem 1.5rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '1rem',
-                      border: isUrgent 
-                        ? '1px solid rgba(239, 68, 68, 0.45)' 
-                        : (isEscalated ? '1px solid rgba(168, 85, 247, 0.45)' : '1px solid var(--border-subtle)')
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 280 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.45rem', flexWrap: 'wrap' }}>
-                        <span style={{ 
-                          fontFamily: 'var(--font-mono)', 
-                          fontSize: '0.8rem', 
-                          fontWeight: 700, 
-                          color: '#38bdf8' 
-                        }}>
-                          {c.ticket_number}
-                        </span>
-
-                        <span className={`badge badge-${c.priority} ${isUrgent ? 'pulse-urgent' : ''}`}>
-                          {c.priority}
-                        </span>
-
-                        <span className={`badge badge-status-${c.status}`}>
-                          {c.status.replace('_', ' ')}
-                        </span>
-
-                        {isEscalated && (
-                          <span className="badge badge-status-escalated">
-                            ⚠️ Auto-Escalated
-                          </span>
-                        )}
-
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                          Dept: <strong style={{ color: '#cbd5e1' }}>{c.category}</strong>
-                        </span>
-                      </div>
-
-                      <h3 
-                        onClick={() => onSelectComplaint(c)}
-                        style={{
-                          fontSize: '1.1rem',
-                          fontWeight: 700,
-                          color: '#ffffff',
-                          cursor: 'pointer',
-                          marginBottom: '0.4rem'
+                      <button 
+                        onClick={() => {
+                          playTick()
+                          if (onGetDirections) {
+                            onGetDirections(comp)
+                          }
                         }}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 font-semibold text-[11px] transition-all active:scale-95 border border-cyan-500/30"
+                        title="Get Campus Directions & Route"
                       >
-                        {c.title}
-                      </h3>
+                        <Navigation className="w-3 h-3 text-cyan-400" />
+                        <span>Route</span>
+                      </button>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <MapPin size={14} color="#f97316" />
-                          <span>{c.location_building} • {c.location_floor} ({c.location_room})</span>
-                        </div>
-
-                        <div>
-                          Reported by: <span style={{ color: '#ffffff' }}>{c.reporter_name}</span>
-                        </div>
-
-                        {c.assigned_to_name && (
-                          <div>
-                            Assigned to: <span style={{ color: '#60a5fa' }}>{c.assigned_to_name}</span>
-                          </div>
-                        )}
-                      </div>
+                      <button 
+                        onClick={() => {
+                          playTick()
+                          onSelectComplaint(comp)
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-semibold text-[11px] transition-all active:scale-95 border border-amber-500/30"
+                      >
+                        Manage
+                      </button>
                     </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-                    {/* Action Controls */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => onSelectComplaint(c)}
-                        className="btn-secondary"
-                        style={{ fontSize: '0.825rem', padding: '0.55rem 0.95rem' }}
-                      >
-                        Inspect Details
-                      </motion.button>
-
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => onOpenStatusUpdate(c)}
-                        className="btn-primary"
-                        style={{ fontSize: '0.825rem', padding: '0.55rem 1.15rem' }}
-                      >
-                        Update / Resolve
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                )
-              })}
-            </div>
-          )}
-        </motion.div>
-      )}
-
-      {/* TAB CONTENT: 2. CAMPUS HEATMAP */}
-      {activeTab === 'heatmap' && (
-        <CampusHeatmap 
-          heatmapData={heatmapData} 
-          onSelectComplaintById={(id) => {
-            const match = complaints.find(c => c.id === id)
-            if (match) onSelectComplaint(match)
-          }} 
-        />
-      )}
-
-      {/* TAB CONTENT: 3. FOOD HYGIENE AUDITS */}
-      {activeTab === 'food_hygiene' && (
-        <FoodHygieneModule
-          currentUser={currentUser}
-          inspections={inspections}
-          complaints={complaints.filter(c => c.department_id === 'food_services' || c.is_food_hygiene)}
-          onRefreshData={onRefreshData}
-        />
-      )}
-
-      {/* TAB CONTENT: 4. ANALYTICS & SLA PERFORMANCE */}
-      {activeTab === 'analytics' && (
-        <AnalyticsDashboard analyticsData={analyticsData} departments={departments} />
-      )}
     </div>
   )
 }
