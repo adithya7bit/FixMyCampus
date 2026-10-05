@@ -26,6 +26,14 @@ import type {
   ToastItem,
   Worker,
 } from "@/types";
+import {
+  supabase,
+  supabaseEnabled,
+  syncComplaintToSupabase,
+  fetchSupabaseComplaints,
+  subscribeToSupabaseComplaints,
+  testSupabaseConnection,
+} from "@/lib/supabase";
 
 const KEY = "fmc-store-v1";
 
@@ -163,6 +171,8 @@ interface StoreCtx {
   toast: (t: Omit<ToastItem, "id">) => void;
   todayCount: (studentId: string) => number;
   runMaintenance: () => void;
+  supabaseStatus: "connected" | "connecting" | "offline";
+  syncWithSupabase: () => Promise<void>;
 }
 
 const Ctx = createContext<StoreCtx | null>(null);
@@ -171,6 +181,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SeedState>(() => load());
   const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem("fmc-session"));
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [supabaseStatus, setSupabaseStatus] = useState<"connected" | "connecting" | "offline">(
+    supabaseEnabled ? "connecting" : "offline"
+  );
 
   const session = state.users.find((u) => u.id === sessionId) ?? null;
 
@@ -193,6 +206,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const patch = useCallback((fn: (s: SeedState) => SeedState) => {
     setState((prev) => fn(prev));
   }, []);
+
+  const syncWithSupabase = useCallback(async () => {
+    if (!supabaseEnabled) {
+      setSupabaseStatus("offline");
+      return;
+    }
+    const isHealthy = await testSupabaseConnection();
+    if (!isHealthy) {
+      setSupabaseStatus("offline");
+      return;
+    }
+    setSupabaseStatus("connected");
+    try {
+      const remote = await fetchSupabaseComplaints();
+      if (remote.length > 0) {
+        patch((s) => {
+          const map = new Map(s.complaints.map((c) => [c.id, c]));
+          for (const r of remote) {
+            map.set(r.id, r);
+          }
+          return {
+            ...s,
+            complaints: Array.from(map.values()).sort(
+              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            ),
+          };
+        });
+      }
+    } catch (e) {
+      console.warn("Supabase fetch failed:", e);
+    }
+  }, [patch]);
+
+  useEffect(() => {
+    syncWithSupabase();
+    const unsub = subscribeToSupabaseComplaints(() => {
+      syncWithSupabase();
+    });
+    return () => {
+      unsub();
+    };
+  }, [syncWithSupabase]);
 
   const toast = useCallback((t: Omit<ToastItem, "id">) => {
     const id = uid("toast");
@@ -355,6 +410,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       media: [...media, ...s.media],
       events: [event, ...s.events],
     }));
+    syncComplaintToSupabase(created, session);
     const admins = state.users.filter((u) => u.role === "admin" || u.role === "super_admin");
     admins.forEach((a) =>
       notify({
@@ -382,6 +438,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         c.id === complaintId ? { ...c, supportCount: c.supportCount + 1, updatedAt: now } : c,
       ),
     }));
+    const suppTarget = state.complaints.find((x) => x.id === complaintId);
+    if (suppTarget) {
+      syncComplaintToSupabase(
+        { ...suppTarget, supportCount: suppTarget.supportCount + 1, updatedAt: now },
+        session
+      );
+    }
     return { ok: true };
   };
 
@@ -434,6 +497,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...s.events,
       ],
     }));
+
+    syncComplaintToSupabase(
+      {
+        ...c,
+        status: nextStatus,
+        reopenCount,
+        updatedAt: now,
+        resolvedAt: nextStatus === "resolved_pending_verification" ? now : c.resolvedAt,
+        closedAt:
+          nextStatus === "closed_verified" || nextStatus === "auto_closed" ? now : c.closedAt,
+        isOverdue: isTerminal(nextStatus) ? false : c.isOverdue,
+      },
+      session
+    );
 
     const student = c.studentId;
     if (to === "resolved_pending_verification") {
@@ -807,9 +884,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toast,
       todayCount,
       runMaintenance,
+      supabaseStatus,
+      syncWithSupabase,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, session, toasts, toast, runMaintenance],
+    [state, session, toasts, toast, runMaintenance, supabaseStatus, syncWithSupabase],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

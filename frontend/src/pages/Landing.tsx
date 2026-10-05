@@ -28,7 +28,7 @@ const LOOP = [
 ];
 
 export function Landing() {
-  const { state, signIn } = useStore();
+  const { state, signIn, supabaseStatus } = useStore();
   const nav = useNavigate();
   const stats = useMemo(() => {
     const monthStart = new Date();
@@ -70,6 +70,23 @@ export function Landing() {
             </a>
           </nav>
           <div className="flex items-center gap-2.5">
+            {supabaseStatus === "connected" ? (
+              <span
+                className="hidden items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 sm:inline-flex"
+                title="Live Supabase Cloud Database Connected"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+                </span>
+                Supabase Live
+              </span>
+            ) : (
+              <span className="hidden items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400 sm:inline-flex">
+                <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+                {supabaseStatus === "connecting" ? "Connecting DB..." : "Local Mode"}
+              </span>
+            )}
             <ThemeToggle />
             <Link to="/student/login">
               <Button size="sm" variant="teal" className="flex items-center gap-1.5 font-bold shadow-sm">
