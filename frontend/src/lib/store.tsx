@@ -33,6 +33,10 @@ import {
   fetchSupabaseComplaints,
   subscribeToSupabaseComplaints,
   testSupabaseConnection,
+  saveUserProfileToSupabase,
+  fetchUserProfileFromSupabase,
+  signInWithGoogleOAuth,
+  toUUID,
 } from "@/lib/supabase";
 
 const KEY = "fmc-store-v1";
@@ -94,6 +98,10 @@ interface StoreCtx {
   session: Profile | null;
   toasts: ToastItem[];
   signIn: (email: string, password: string) => { ok: boolean; error?: string; user?: Profile };
+  signInWithGoogle: (
+    customEmail?: string,
+    customName?: string
+  ) => Promise<{ ok: boolean; error?: string; user?: Profile }>;
   signUp: (input: {
     fullName: string;
     email: string;
@@ -249,6 +257,65 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, [syncWithSupabase]);
 
+  // Handle Supabase OAuth session listener & cloud profile sync
+  useEffect(() => {
+    if (!supabase) return;
+
+    const handleSupabaseSession = async (user: any) => {
+      if (!user || !user.email) return;
+      const email = user.email.toLowerCase().trim();
+      const fullName =
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
+
+      const profile: Profile = {
+        id: user.id,
+        email,
+        fullName,
+        role: "student",
+        department: "Computer Science & Engineering",
+        year: "3rd Year",
+        hostel: "hostel",
+        avatarUrl,
+        createdAt: user.created_at || new Date().toISOString(),
+      };
+
+      // Persist to Supabase profiles database table
+      await saveUserProfileToSupabase(profile);
+
+      patch((s) => ({
+        ...s,
+        users: [...s.users.filter((u) => u.email.toLowerCase() !== email && u.id !== user.id), profile],
+      }));
+
+      setSessionId(profile.id);
+      localStorage.setItem("fmc-session", profile.id);
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        handleSupabaseSession(session.user);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user && (event === "SIGNED_IN" || event === "USER_UPDATED")) {
+        handleSupabaseSession(session.user);
+      } else if (event === "SIGNED_OUT") {
+        setSessionId(null);
+        localStorage.removeItem("fmc-session");
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, [patch]);
+
   const toast = useCallback((t: Omit<ToastItem, "id">) => {
     const id = uid("toast");
     setToasts((prev) => [...prev, { ...t, id }]);
@@ -279,7 +346,55 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!user) return { ok: false, error: "Those credentials don’t match our records." };
     setSessionId(user.id);
     localStorage.setItem("fmc-session", user.id);
+    saveUserProfileToSupabase(user).catch(() => {});
     return { ok: true, user };
+  };
+
+  const signInWithGoogle: StoreCtx["signInWithGoogle"] = async (customEmail, customName) => {
+    if (customEmail) {
+      const email = customEmail.trim().toLowerCase();
+      const id = `u-${toUUID(email).slice(0, 12)}`;
+      const name =
+        customName ||
+        email
+          .split("@")[0]
+          .replace(/[._-]/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      const googleProfile: Profile = {
+        id,
+        email,
+        fullName: name,
+        role: "student",
+        department: "Computer Science & Engineering",
+        year: "3rd Year",
+        hostel: "hostel",
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Store in Supabase database profiles table
+      await saveUserProfileToSupabase(googleProfile);
+
+      patch((s) => ({
+        ...s,
+        users: [...s.users.filter((u) => u.email.toLowerCase() !== email), googleProfile],
+      }));
+
+      setSessionId(googleProfile.id);
+      localStorage.setItem("fmc-session", googleProfile.id);
+      return { ok: true, user: googleProfile };
+    }
+
+    if (supabase) {
+      const res = await signInWithGoogleOAuth();
+      if (!res.ok) {
+        return { ok: false, error: res.error };
+      }
+      return { ok: true };
+    }
+
+    return { ok: false, error: "Authentication service unavailable" };
   };
 
   const signUp: StoreCtx["signUp"] = (input) => {
@@ -302,12 +417,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     patch((s) => ({ ...s, users: [...s.users, user] }));
     setSessionId(id);
     localStorage.setItem("fmc-session", id);
+    saveUserProfileToSupabase(user).catch(() => {});
     return { ok: true };
   };
 
   const signOut = () => {
     setSessionId(null);
     localStorage.removeItem("fmc-session");
+    supabase?.auth.signOut().catch(() => {});
   };
 
   const requestReset: StoreCtx["requestReset"] = (email) => {
@@ -857,6 +974,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       session,
       toasts,
       signIn,
+      signInWithGoogle,
       signUp,
       signOut,
       requestReset,

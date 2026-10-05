@@ -180,3 +180,82 @@ export function subscribeToSupabaseComplaints(onChange: () => void): () => void 
     return () => {};
   }
 }
+
+export async function saveUserProfileToSupabase(
+  profile: Profile
+): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Supabase client not initialized" };
+  try {
+    const uuid = toUUID(profile.id);
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        id: uuid,
+        name: profile.fullName || "Student",
+        email: profile.email.toLowerCase().trim(),
+        role: profile.role || "student",
+        avatar_url: profile.avatarUrl || null,
+        verified: true,
+        created_at: profile.createdAt || new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+    if (error) {
+      console.warn("Supabase profile save error:", error);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Failed to save profile" };
+  }
+}
+
+export async function fetchUserProfileFromSupabase(
+  email: string
+): Promise<Profile | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .ilike("email", email.toLowerCase().trim())
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      email: data.email,
+      fullName: data.name,
+      role: (data.role as any) || "student",
+      department: data.department_id || "Computer Science",
+      year: "3rd Year",
+      hostel: "hostel",
+      avatarUrl: data.avatar_url,
+      createdAt: data.created_at || new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function signInWithGoogleOAuth(): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: "Supabase client not initialized" };
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/student`,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
+    });
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Failed to initiate Google OAuth" };
+  }
+}
+
