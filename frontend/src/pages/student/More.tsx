@@ -86,7 +86,7 @@ export function StudentMapPage() {
                   <StatusBadge status={chosen.status} />
                 </div>
               </div>
-              <Link to={`/student/complaints/${chosen.id}`} className="mt-2.5 inline-flex items-center gap-1 text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline">
+              <Link to={`/student/reports/${chosen.id}`} className="mt-2.5 inline-flex items-center gap-1 text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline">
                 View full ticket & timeline →
               </Link>
             </Card>
@@ -121,7 +121,7 @@ export function StudentNotifications() {
           {list.map((n) => (
             <li key={n.id}>
               <Link
-                to={n.complaintId ? `/student/complaints/${n.complaintId}` : "/student"}
+                to={n.complaintId ? `/student/reports/${n.complaintId}` : "/student"}
                 onClick={() => markRead(n.id)}
               >
                 <Card className={`p-4 ${n.readAt ? "opacity-70" : "border-brand-200"}`}>

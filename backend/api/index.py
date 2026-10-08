@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import re
+from services.ai_service import analyze_complaint, enhance_description
 
 app = FastAPI(
     title="FixMyCampus API Engine",
@@ -41,9 +42,11 @@ CATEGORY_RULES = {
     }
 }
 
-class AIClassifyRequest(BaseModel):
+class AIAnalyzeRequest(BaseModel):
     title: str
     description: str
+    category: Optional[str] = None
+    location: Optional[str] = "Unknown"
 
 class DuplicateCheckRequest(BaseModel):
     title: str
@@ -58,38 +61,28 @@ def read_root():
 def health_check():
     return {"status": "healthy", "database": "connected"}
 
-@app.post("/api/ai/classify")
-def classify_issue(req: AIClassifyRequest):
-    combined = f"{req.title} {req.description}".lower()
+@app.post("/api/ai/analyze-report")
+def analyze_report(req: AIAnalyzeRequest):
+    result = analyze_complaint(
+        title=req.title,
+        description=req.description,
+        location=req.location
+    )
     
-    selected_dept = "civil_maintenance"
-    dept_info = CATEGORY_RULES["civil_maintenance"]
-    max_matches = 0
-    
-    for dept_id, info in CATEGORY_RULES.items():
-        count = sum(1 for kw in info["keywords"] if kw in combined)
-        if count > max_matches:
-            max_matches = count
-            selected_dept = dept_id
-            dept_info = info
-            
-    # Urgency scoring
-    if any(k in combined for k in ["fire", "spark", "trapped", "stuck elevator", "shock", "flood"]):
-        priority = "urgent"
-    elif any(k in combined for k in ["exam", "blackout", "overflow", "offline"]):
-        priority = "high"
-    else:
-        priority = "medium"
-        
-    sla = dept_info["sla"].get(priority, 24)
-    
-    return {
-        "category": dept_info["name"],
-        "department_id": selected_dept,
-        "priority": priority,
-        "sla_hours": sla,
-        "confidence": min(95, 70 + max_matches * 5)
-    }
+    # Optional: Apply deterministic overrides here if needed
+    if req.category and result["category"] == "General":
+        result["category"] = req.category
+
+    return result
+
+class EnhanceRequest(BaseModel):
+    title: str
+    description: str
+
+@app.post("/api/ai/enhance-description")
+def api_enhance_description(req: EnhanceRequest):
+    enhanced = enhance_description(req.title, req.description)
+    return {"enhanced_description": enhanced}
 
 class SuggestRequest(BaseModel):
     title: str
@@ -194,28 +187,132 @@ def submit_contact_inquiry(inquiry: ContactModel):
     CONTACT_INQUIRIES.insert(0, record)
     return {"status": "received", "inquiry_id": f"INQ-{len(CONTACT_INQUIRIES)}"}
 
+class ChatMessage(BaseModel):
+    role: Optional[str] = "user"
+    text: Optional[str] = None
+    content: Optional[str] = None
+
 class ChatRequest(BaseModel):
-    message: str
+    message: Optional[str] = None
+    messages: Optional[List[ChatMessage]] = None
+
+import os
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+CAMPUS_SYSTEM_PROMPT = """You are the official FixMyCampus AI Assistant for university students, faculty, and maintenance staff.
+Key knowledge:
+1. 6-step lifecycle: (1) Report & Photo -> (2) Location Pin on 3D Map -> (3) Admin Triage & Dept Assignment -> (4) Physical Technician Fix -> (5) Student Verification Gate -> (6) Official Resolution.
+2. Student Verification Gate: Tickets cannot be silently closed by technicians. Students verify the fix on their dashboard. If not resolved, tap "No, problem still exists" to reopen & escalate.
+3. Departments: Civil & Plumbing (leaks, restrooms, furniture), Electrical & Power (power cuts, AC, elevator, lighting), IT Infrastructure (Wi-Fi, eduroam, lab PCs), Food Services (mess, cafeteria hygiene), Housekeeping (sanitation, dustbins), Campus Security (locks, lighting, emergencies).
+4. SLAs: Urgent (1-3 hrs: safety/fire/gas/trapped), High (4-12 hrs: water/power/mess hygiene), Medium (18-24 hrs: routine maintenance), Low (48-72 hrs: cosmetic).
+5. Tone: Helpful, warm, crisp, student-friendly, and concise (under 3-4 sentences unless detailed help is requested). Always guide students to the Report or Dashboard tabs when appropriate."""
+
+def get_heuristic_campus_reply(user_msg: str) -> str:
+    msg = user_msg.lower().strip()
+    
+    # Greetings & About
+    if any(k in msg for k in ["hello", "hi", "hey", "sup", "greetings", "good morning", "good evening"]):
+        return "Hello! I'm your FixMyCampus AI Assistant. I can help you report campus issues, check complaint status, look up department SLAs, or navigate the facilities system. What can I do for you today?"
+    
+    if any(k in msg for k in ["who are you", "what are you", "what is fixmycampus", "about"]):
+        return "FixMyCampus is your university's central facility reporting & triage platform. We connect students directly to maintenance crews for rapid repairs of electrical, plumbing, Wi-Fi, and cafeteria issues with a mandatory Student Verification Gate!"
+    
+    # Emergencies & Hazards
+    if any(k in msg for k in ["fire", "spark", "trapped", "stuck elevator", "shock", "live wire", "gas leak", "collapse", "danger", "hazard", "emergency"]):
+        return "🚨 EMERGENCY ALERT: For life-safety hazards (fire, live electrical wires, trapped elevators, or gas leaks), immediately alert Campus Security at the main gate and file an URGENT report on FixMyCampus. Our urgent SLA dispatch target is under 1-2 hours!"
+    
+    # How to report
+    if any(k in msg for k in ["how to report", "how do i report", "file a complaint", "file report", "submit", "new issue", "lodge"]):
+        return "To file a complaint: 1) Click the '+ Report' tab. 2) Enter a title & short description. 3) Our AI will automatically categorize and calculate the SLA. 4) Select or pin the campus building/room. 5) Attach an optional photo and hit Submit!"
+    
+    # Complaint status & tracking
+    if any(k in msg for k in ["status", "track", "my complaint", "ticket", "fmc-"]):
+        # Check if user mentioned a ticket number
+        ticket_match = re.search(r'fmc[-_\w\d]+', msg, re.IGNORECASE)
+        if ticket_match:
+            return f"Checking ticket {ticket_match.group(0).upper()}: You can see real-time technician progress and inspection photos on your Student Dashboard under 'My Complaints'. If marked fixed, you can verify or reopen the ticket!"
+        return "You can check the live status of all your submitted complaints directly on your Student Dashboard. Each ticket shows real-time progress: Pending, Assigned, In-Progress, or Pending Verification."
+    
+    # Student Verification Gate
+    if any(k in msg for k in ["verification", "gate", "verify", "reopen", "close ticket", "still broken"]):
+        return "The Student Verification Gate protects you! Technicians cannot simply mark a job done and leave. You receive a verification prompt to confirm the physical fix on campus. If it's still broken, tap 'Problem Still Exists' to automatically escalate it."
+    
+    # Wi-Fi & IT
+    if any(k in msg for k in ["wifi", "wi-fi", "internet", "network", "router", "eduroam", "lan", "portal", "computer", "lab"]):
+        return "IT & Network Infrastructure issues (Wi-Fi dead spots, eduroam outages, lab PC malfunctions) are routed to the IT Support Team with a 6-18 hour resolution window. Please mention the specific building and floor when filing."
+    
+    # Water & Plumbing
+    if any(k in msg for k in ["water", "leak", "pipe", "toilet", "washroom", "flush", "sink", "tap", "drain", "flood", "sewage", "restroom"]):
+        return "Plumbing & sanitation complaints are dispatched directly to Civil Maintenance. High-severity issues like water cuts or flooding are prioritized for 3-12 hour resolution. Report it under 'Civil & Plumbing'."
+    
+    # Electricity & Power
+    if any(k in msg for k in ["electricity", "power", "blackout", "light", "fan", "switch", "socket", "ac", "air condition", "generator", "breaker"]):
+        return "Electrical issues are handled by the Electrical & Power crew. Power failures and hazardous switches are prioritized urgently (2-8 hours). Make sure to specify the classroom or dorm room number."
+    
+    # Food & Mess
+    if any(k in msg for k in ["food", "mess", "canteen", "cafeteria", "hygiene", "cockroach", "insect", "meal", "spoiled", "dining"]):
+        return "Food Services & Canteen complaints receive top priority (1-4 hour SLA) due to health and safety standards. Please attach photo evidence to help the food hygiene committee take immediate action."
+    
+    # Hostel & Dorms
+    if any(k in msg for k in ["hostel", "dorm", "geyser", "roommate", "bed", "warden", "curfew", "hot water", "cupboard"]):
+        return "Hostel maintenance complaints (geysers, furniture, locks) can be filed under the 'Hostel Affairs' or 'Civil Maintenance' category. Include your hostel block and room number for technician entry."
+    
+    # SLAs
+    if any(k in msg for k in ["sla", "timeline", "how long", "time", "hours", "duration"]):
+        return "Our SLA resolution targets: Urgent hazards: 1-3 hours | High priority: 4-12 hours | Medium (routine repairs): 18-24 hours | Low priority: 48-72 hours. You can track countdown timers on your dashboard."
+    
+    # Map & Navigation
+    if any(k in msg for k in ["map", "location", "3d", "building", "where"]):
+        return "Explore our interactive 3D Campus Map on the 'Map' tab! You can see active issues across buildings, filter by category, and pinpoint exact coordinates when reporting."
+    
+    # Login & Roles
+    if any(k in msg for k in ["login", "sign in", "sign up", "register", "password", "role", "admin"]):
+        return "Students can sign up or log in using their student email credentials. Admin and technician accounts are provisioned by Campus Operations. You can access the portal via the 'Sign In' link."
+        
+    return "I'm here to assist with FixMyCampus! You can ask me how to file a report, check ticket status, find department SLAs, or report facilities issues (water, electricity, Wi-Fi, mess, hostel)."
 
 @app.post("/api/chat")
 def chat_agent(req: ChatRequest):
-    msg = req.message.lower()
-    reply = "I'm sorry, I couldn't quite understand that. Try asking about a specific complaint, department, or how to use the app."
-    
-    if any(k in msg for k in ["login", "sign in", "log in"]):
-        reply = "To login, head to the 'Sign In' page from the landing page. We have separate portals for Students and Admins. If you forgot your password, use the 'Forgot password' link on the login page."
-    elif any(k in msg for k in ["status", "complaint", "ticket"]):
-        reply = "I can check the status of your complaints for you! Just head over to your Dashboard to see live updates, or give me your Ticket Number (e.g. FMC-2026-00001)."
-    elif any(k in msg for k in ["report", "file", "new"]):
-        reply = "You can file a new report easily. Just navigate to the 'Report' tab, drop a pin on the map, and I'll automatically categorize it for you!"
-    elif any(k in msg for k in ["water", "wifi", "electricity"]):
-        reply = "Campus infrastructure is maintained by the Facilities team. If you're experiencing an outage, please file a report so we can alert them immediately. Severe issues are treated as high priority."
-    elif any(k in msg for k in ["hello", "hi", "hey", "help"]):
-        reply = "Hello there! I am the FixMyCampus AI Assistant. I can help you with app navigation, filing reports, or checking issue status."
-    elif any(k in msg for k in ["admin", "staff", "director"]):
-        reply = "Admin accounts are issued by the directorate. If you are staff, you can sign in via the Operations Portal. Public signups are for students only."
-    elif any(k in msg for k in ["map", "location", "building"]):
-        reply = "We have an interactive 3D Campus Map! You can view live issues geographically on the 'Map' tab. It supports filtering and heatmaps."
+    user_msg = req.message or ""
+    if not user_msg and req.messages and len(req.messages) > 0:
+        last = req.messages[-1]
+        user_msg = last.text or last.content or ""
+        
+    user_msg = user_msg.strip()
+    if not user_msg:
+        return {"reply": "Hi! How can I assist you with campus facilities today?"}
+        
+    # Attempt AI inference with Generative Language API
+    reply = None
+    try:
+        import requests
+        prompt = f"{CAMPUS_SYSTEM_PROMPT}\n\nStudent question: {user_msg}\nHelpful FixMyCampus AI Answer:"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 300}
+        }
+        
+        # Try fast models
+        for model in ["gemini-3.8-flash", "gemma-4-26b-a4b-it", "gemma-4-31b-it"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                r = requests.post(url, json=payload, timeout=3.5)
+                if r.status_code == 200:
+                    data = r.json()
+                    candidates = data.get("candidates", [])
+                    if candidates and len(candidates) > 0:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts and "text" in parts[0]:
+                            reply = parts[0]["text"].strip()
+                            break
+            except Exception:
+                continue
+    except Exception:
+        pass
+        
+    if not reply:
+        reply = get_heuristic_campus_reply(user_msg)
         
     return {"reply": reply}
+
 

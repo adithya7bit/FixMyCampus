@@ -2,12 +2,12 @@ import type { Status } from "@/types";
 
 /** Allowed transitions. `reopened` immediately continues to `under_review`. */
 export const ALLOWED: Record<Status, Status[]> = {
-  submitted: ["under_review", "rejected", "merged"],
-  under_review: ["assigned", "rejected", "merged", "in_progress"],
-  assigned: ["in_progress", "under_review", "rejected"],
-  in_progress: ["resolved_pending_verification", "assigned", "under_review"],
+  submitted: ["under_review", "rejected", "merged", "closed_verified"],
+  under_review: ["assigned", "rejected", "merged", "in_progress", "closed_verified"],
+  assigned: ["in_progress", "under_review", "rejected", "closed_verified"],
+  in_progress: ["resolved_pending_verification", "assigned", "under_review", "closed_verified"],
   resolved_pending_verification: ["closed_verified", "reopened", "auto_closed"],
-  reopened: ["under_review"],
+  reopened: ["under_review", "closed_verified"],
   closed_verified: [],
   rejected: [],
   auto_closed: ["under_review"],

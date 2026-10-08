@@ -67,7 +67,8 @@ function publicId(seq: number) {
 }
 
 function slaDue(priority: Priority, hours: Record<Priority, number>) {
-  return new Date(Date.now() + hours[priority] * 36e5).toISOString();
+  const h = hours?.[priority] ?? 48;
+  return new Date(Date.now() + h * 36e5).toISOString();
 }
 
 export interface DuplicateHit {
@@ -495,7 +496,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       departmentId: dept?.id,
       reopenCount: 0,
       isOverdue: false,
-      slaDueAt: slaDue(input.priority, state.settings.slaHoursByPriority),
+      slaDueAt: input.title.includes("SOS")
+        ? new Date(Date.now() + 15 * 60000).toISOString()
+        : slaDue(input.priority, state.settings.slaHoursByPriority),
       createdAt: now,
       updatedAt: now,
       supportCount: 1,
@@ -503,7 +506,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       aiCategory: input.aiCategory,
       aiPriority: input.aiPriority,
     };
-    const media: ComplaintMedia[] = input.mediaDataUrls.map((m) => ({
+    const media: ComplaintMedia[] = (input.mediaDataUrls || []).map((m) => ({
       id: uid("med"),
       complaintId: id,
       storagePath: m.url,
@@ -760,8 +763,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const c = state.complaints.find((x) => x.id === complaintId);
     if (!c) return { ok: false, error: "Not found" };
     if (c.studentId !== studentId) return { ok: false, error: "Only the reporter can verify." };
-    if (c.status !== "resolved_pending_verification") {
-      return { ok: false, error: "This complaint is not waiting for verification." };
+    if (c.status === "closed_verified" || c.status === "rejected") {
+      return { ok: false, error: "This complaint is already closed." };
     }
     const now = new Date().toISOString();
     patch((s) => ({

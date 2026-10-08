@@ -1,7 +1,7 @@
-import { CategoryChip, PriorityBadge, StatusBadge } from "@/components/badges";
+import { CategoryChip, PriorityBadge, StatusBadge, SLACountdownBadge } from "@/components/badges";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 import { CATEGORIES, STATUSES } from "@/lib/constants";
-import { relativeTime } from "@/lib/format";
+import { relativeTime, formatDateTime } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import type { Category, Priority, Status } from "@/types";
 import { cn } from "@/utils/cn";
@@ -113,7 +113,8 @@ export function AdminInbox() {
               <th className="px-3 py-3">Priority</th>
               <th className="px-3 py-3">Status</th>
               <th className="px-3 py-3">Location</th>
-              <th className="px-3 py-3">Age</th>
+              <th className="px-3 py-3">Reported</th>
+              <th className="px-3 py-3">SLA Timer</th>
             </tr>
           </thead>
           <tbody>
@@ -144,7 +145,10 @@ export function AdminInbox() {
                   <StatusBadge status={c.status} overdue={c.isOverdue} />
                 </td>
                 <td className="px-3 py-3 text-xs text-slate-500">{c.building}</td>
-                <td className="px-3 py-3 text-xs text-slate-500">{relativeTime(c.createdAt)}</td>
+                <td className="px-3 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDateTime(c.createdAt)}</td>
+                <td className="px-3 py-3">
+                  <SLACountdownBadge dueAt={c.slaDueAt} status={c.status} isOverdue={c.isOverdue} />
+                </td>
               </tr>
             ))}
           </tbody>

@@ -1,5 +1,5 @@
 import { CampusMap } from "@/components/CampusMap";
-import { CategoryChip, PriorityBadge, StatusBadge } from "@/components/badges";
+import { CategoryChip, PriorityBadge, StatusBadge, SLACountdownBadge } from "@/components/badges";
 import { Button, Card, Field, Select, Textarea } from "@/components/ui";
 import { compressImage } from "@/lib/compress";
 import { CATEGORIES, PRIORITIES } from "@/lib/constants";
@@ -10,11 +10,12 @@ import { useStore } from "@/lib/store";
 import type { Category, Priority, Status } from "@/types";
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 
 export function AdminReview() {
   const { id } = useParams();
   const store = useStore();
+  const navigate = useNavigate();
   const { state, session, toast } = store;
   const c = state.complaints.find((x) => x.id === id);
   const [note, setNote] = useState("");
@@ -64,10 +65,11 @@ export function AdminReview() {
           </Link>
           <p className="mt-2 text-xs text-slate-400">{c.publicId}</p>
           <h1 className="text-2xl font-semibold tracking-tight">{c.title}</h1>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2 items-center">
             <StatusBadge status={c.status} overdue={c.isOverdue} />
             <PriorityBadge priority={c.priority} />
             <CategoryChip category={c.category} />
+            <SLACountdownBadge dueAt={c.slaDueAt} status={c.status} isOverdue={c.isOverdue} />
             {c.reopenCount > 0 && (
               <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-800">
                 Reopened ×{c.reopenCount}
@@ -104,7 +106,8 @@ export function AdminReview() {
 
         <CampusMap
           mode="view"
-          pins={[{ id: c.id, lat: c.latitude, lng: c.longitude, category: c.category }]}
+          minimal={true}
+          pins={[{ id: c.id, lat: c.latitude, lng: c.longitude, category: c.category, status: c.status, color: c.priority === "emergency" ? "#ef4444" : undefined }]}
           height={220}
         />
 
@@ -307,7 +310,8 @@ export function AdminReview() {
                   departmentId: deptId,
                   workerId: workerId || undefined,
                 });
-                toast({ tone: "success", title: "Assigned" });
+                toast({ tone: "success", title: "Assigned successfully" });
+                navigate("/admin/operations");
               }}
             >
               Assign

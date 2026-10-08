@@ -9,9 +9,10 @@ import {
   Map,
   Menu,
   Settings,
-  Soup,
   Users,
-  FileSpreadsheet,
+  BarChart3,
+  Sliders,
+  Radio,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -20,12 +21,15 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/admin/inbox", label: "Inbox", icon: ClipboardList },
-  { to: "/admin/map", label: "Map / Heatmap", icon: Map },
-  { to: "/admin/workers", label: "Workers", icon: Users },
-  { to: "/admin/hygiene", label: "Food & Hygiene", icon: Soup },
-  { to: "/admin/reports", label: "Reports", icon: FileSpreadsheet },
+  { to: "/admin/map", label: "Campus Map", icon: Map },
+  { to: "/admin/operations", label: "Operations & Dispatch", icon: Radio },
+  { to: "/admin/technicians", label: "Technicians", icon: Users },
+  { to: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/admin/sla", label: "SLA Management", icon: Sliders },
+  { to: "/admin/notifications", label: "Notifications", icon: Bell },
   { to: "/admin/settings", label: "Settings", icon: Settings },
 ];
+
 
 export function AdminLayout() {
   const { session, state } = useStore();

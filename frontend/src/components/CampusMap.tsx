@@ -42,6 +42,7 @@ interface Props {
   onRequestReport?: () => void;
   className?: string;
   height?: number | string;
+  minimal?: boolean;
 }
 
 export function CampusMap({
@@ -54,6 +55,7 @@ export function CampusMap({
   onRequestReport,
   className,
   height = "560px",
+  minimal = false,
 }: Props) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -115,12 +117,12 @@ export function CampusMap({
     if (!mapContainerRef.current) return;
 
     if (!mapInstanceRef.current) {
-      const initialLat = value?.lat || 20.5937;
-      const initialLng = value?.lng || 78.9629;
+      const initialLat = (minimal && pins && pins.length > 0) ? pins[0].lat : (value?.lat || currentCampus.latitude || 11.4984);
+      const initialLng = (minimal && pins && pins.length > 0) ? pins[0].lng : (value?.lng || currentCampus.longitude || 77.2766);
 
       const map = L.map(mapContainerRef.current, {
         center: [initialLat, initialLng],
-        zoom: value?.lat ? (currentCampus.zoom || 16) : 5,
+        zoom: value?.lat ? (currentCampus.zoom || 16) : (currentCampus.zoom || 16),
         zoomControl: false,
       });
 
@@ -240,13 +242,14 @@ export function CampusMap({
     }
 
     // Filter out pins that are far from the current campus (e.g., mock data in Delhi when viewing TN campus)
-    const localPins = adaptedPins.filter((c) => {
+    const localPins = minimal ? adaptedPins : adaptedPins.filter((c) => {
       const dist = Math.hypot(c.lat - currentCampus.latitude, c.lng - currentCampus.longitude);
       return dist < 0.5; // Roughly within 55km
     });
 
     localPins.forEach((c) => {
       const getStatusColor = (status?: string) => {
+        if (c.color) return c.color;
         switch (status) {
           case 'submitted':
           case 'under_review': return '#3b82f6';
@@ -318,7 +321,9 @@ export function CampusMap({
         if (mapInstanceRef.current) {
           mapInstanceRef.current.setView([latitude, longitude], 17);
         }
-        handlePinPlacement(latitude, longitude);
+        if (mode === 'pick') {
+          handlePinPlacement(latitude, longitude);
+        }
         setLocationStatus('Device location centered on Mapbox.');
         setTimeout(() => setLocationStatus(null), 3000);
       },
@@ -327,7 +332,9 @@ export function CampusMap({
         if (mapInstanceRef.current) {
           mapInstanceRef.current.setView([currentCampus.latitude, currentCampus.longitude], 17);
         }
-        handlePinPlacement(currentCampus.latitude, currentCampus.longitude);
+        if (mode === 'pick') {
+          handlePinPlacement(currentCampus.latitude, currentCampus.longitude);
+        }
         setLocationStatus(`Centered on ${currentCampus.shortName} coordinates.`);
         setTimeout(() => setLocationStatus(null), 3000);
       },
@@ -342,7 +349,8 @@ export function CampusMap({
       className={cn("relative w-full flex flex-col rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xl bg-[#07090e] overflow-hidden", className)}
       style={computedHeightStyle ? { height: computedHeightStyle } : undefined}
     >
-      <div className="absolute top-3 left-3 z-[1000] flex flex-wrap items-center gap-2">
+      {!minimal && (
+        <div className="absolute top-3 left-3 z-[1000] flex flex-wrap items-center gap-2">
         <div className="flex items-center bg-[#0f172a]/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-1 text-xs shadow-xl">
           <button
             type="button"
@@ -428,23 +436,24 @@ export function CampusMap({
           )}
         </div>
 
-        {mode === 'pick' && (
-          <button
-            type="button"
-            onClick={handleUseCurrentLocation}
-            disabled={locatingUser}
-            className="px-3 py-1.5 bg-[#0f172a]/90 backdrop-blur-md border border-slate-700 hover:border-slate-500 text-xs text-white rounded-xl flex items-center gap-1.5 shadow-lg transition-all cursor-pointer"
-          >
-            <Navigation className={`w-3.5 h-3.5 text-[#ccf763] ${locatingUser ? 'animate-spin' : ''}`} />
-            <span>{locatingUser ? 'Detecting GPS...' : 'Use My Location'}</span>
-          </button>
-        )}
-      </div>
+        <button
+          type="button"
+          onClick={handleUseCurrentLocation}
+          disabled={locatingUser}
+          className="px-3 py-1.5 bg-[#0f172a]/90 backdrop-blur-md border border-slate-700 hover:border-slate-500 text-xs text-white rounded-xl flex items-center gap-1.5 shadow-lg transition-all cursor-pointer"
+        >
+          <Navigation className={`w-3.5 h-3.5 text-[#ccf763] ${locatingUser ? 'animate-spin' : ''}`} />
+          <span>{locatingUser ? 'Detecting GPS...' : 'Use My Location'}</span>
+        </button>
+        </div>
+      )}
 
-      <div className="absolute bottom-12 left-3 z-[1000] pointer-events-none flex items-center gap-1.5 bg-[#0f172a]/80 backdrop-blur-xs px-2.5 py-1 rounded-lg border border-slate-800 text-[10px] text-slate-300 font-mono">
+      {!minimal && (
+        <div className="absolute bottom-12 left-3 z-[1000] pointer-events-none flex items-center gap-1.5 bg-[#0f172a]/80 backdrop-blur-xs px-2.5 py-1 rounded-lg border border-slate-800 text-[10px] text-slate-300 font-mono">
         <Sparkles className="w-3 h-3 text-[#ccf763]" />
         <span>Mapbox Vector Active · {currentCampus.shortName}</span>
       </div>
+      )}
 
       {locationStatus && (
         <div className="absolute top-14 left-3 z-[1000] px-3 py-1.5 bg-slate-900/95 border border-slate-700 rounded-lg text-xs text-slate-200 shadow-xl flex items-center gap-2 animate-in fade-in duration-200">
@@ -455,7 +464,8 @@ export function CampusMap({
 
       <div ref={mapContainerRef} style={{ height: '100%', width: '100%' }} className="z-10 flex-1" />
 
-      <div className="p-3 bg-[#0d0d26] border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+      {!minimal && (
+        <div className="p-3 bg-[#0d0d26] border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
         <div className="flex items-center gap-2 text-slate-300">
           <MapPinIcon className="w-4 h-4 text-[#ccf763] shrink-0" />
           <div>
@@ -481,7 +491,8 @@ export function CampusMap({
             Lat/Lng: {(value?.lat || currentCampus.latitude).toFixed(4)}, {(value?.lng || currentCampus.longitude).toFixed(4)}
           </span>
         </div>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

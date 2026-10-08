@@ -9,7 +9,7 @@ import type { Status } from "@/types";
 import { cn } from "@/utils/cn";
 import { MessageSquare, Shield } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import confetti from "canvas-confetti";
 
 function stepIndex(status: Status): number {
@@ -21,11 +21,13 @@ function stepIndex(status: Status): number {
 
 export function StudentDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { session, state, verify, addComment, toast } = useStore();
   const c = state.complaints.find((x) => x.id === id);
   const [reason, setReason] = useState("");
   const [photo, setPhoto] = useState<string | undefined>();
   const [body, setBody] = useState("");
+  const [showReopen, setShowReopen] = useState(false);
 
   const media = state.media.filter((m) => m.complaintId === id);
   const events = state.events
@@ -73,72 +75,7 @@ export function StudentDetail() {
         </div>
       </div>
 
-      {c.status === "resolved_pending_verification" && isMine && (
-        <Card className="border-violet-300 bg-violet-50 p-5 dark:bg-violet-950/30">
-          <h2 className="text-lg font-semibold">Is this problem actually fixed?</h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Staff marked it resolved. Please confirm — this is how we close the loop.
-          </p>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Button
-              variant="teal"
-              onClick={() => {
-                confetti({
-                  particleCount: 90,
-                  spread: 60,
-                  origin: { y: 0.6 },
-                });
-                const r = verify({ complaintId: c.id, studentId: session!.id, outcome: "fixed" });
-                if (r.ok) toast({ tone: "success", title: "Confirmed Fixed! Closed successfully." });
-              }}
-            >
-              Yes, it’s fixed
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                /* show reopen fields */
-                document.getElementById("reopen-reason")?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              No, still a problem
-            </Button>
-          </div>
-          <div id="reopen-reason" className="mt-4 space-y-2">
-            <Field label="What is still wrong?">
-              <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
-            </Field>
-            <label className="text-xs font-medium text-slate-600">
-              Optional new photo
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="mt-1 block text-sm"
-                onChange={(e) => onFile(e.target.files?.[0])}
-              />
-            </label>
-            {photo && <img src={photo} alt="" className="h-24 rounded-lg object-cover" />}
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => {
-                if (!reason.trim()) return toast({ tone: "error", title: "Please explain what’s still wrong" });
-                const r = verify({
-                  complaintId: c.id,
-                  studentId: session!.id,
-                  outcome: "not_fixed",
-                  reason,
-                  photoUrl: photo,
-                });
-                if (r.ok) toast({ tone: "info", title: "Reopened — admin has been alerted" });
-              }}
-            >
-              Reopen complaint
-            </Button>
-          </div>
-        </Card>
-      )}
+
 
       {c.status === "rejected" && (
         <Card className="border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
@@ -224,11 +161,18 @@ export function StudentDetail() {
         </div>
       )}
 
-      <CampusMap
-        mode="view"
-        pins={[{ id: c.id, lat: c.latitude, lng: c.longitude, category: c.category, label: c.title }]}
-        height={220}
-      />
+      <div>
+        <CampusMap
+          mode="view"
+          pins={[{ id: c.id, lat: c.latitude, lng: c.longitude, category: c.category, label: c.title }]}
+          height={220}
+          minimal={true}
+        />
+        <div className="mt-2 text-[11px] text-slate-500 font-mono flex items-center justify-between px-1">
+          <span>Coordinates: {c.latitude.toFixed(6)}, {c.longitude.toFixed(6)}</span>
+          {c.building && <span>Building: {c.building}</span>}
+        </div>
+      </div>
 
       <Card className="p-5">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
@@ -277,6 +221,81 @@ export function StudentDetail() {
           </form>
         )}
       </Card>
+
+      {["submitted", "assigned", "in_progress", "resolved_pending_verification", "reopened"].includes(c.status) && isMine && (
+        <Card className="p-5 border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0d0d26]">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Is this problem actually fixed?</h2>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            You can verify if this issue has been resolved, or let us know if it's still a problem.
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <Button
+              variant="teal"
+              onClick={() => {
+                setShowReopen(false);
+                confetti({
+                  particleCount: 90,
+                  spread: 60,
+                  origin: { y: 0.6 },
+                });
+                const r = verify({ complaintId: c.id, studentId: session!.id, outcome: "fixed" });
+                if (r.ok) {
+                  toast({ tone: "success", title: "Confirmed Fixed! Closed successfully." });
+                  setTimeout(() => navigate("/student/issues"), 1500);
+                }
+              }}
+            >
+              Yes, it’s fixed
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowReopen((prev) => !prev);
+                setTimeout(() => {
+                  document.getElementById("reopen-reason")?.scrollIntoView({ behavior: "smooth" });
+                }, 50);
+              }}
+            >
+              No, still a problem
+            </Button>
+          </div>
+          {showReopen && (
+            <div id="reopen-reason" className="mt-4 space-y-2 animate-in fade-in slide-in-from-top-2">
+              <Field label="What is still wrong?">
+                <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
+              </Field>
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                Optional new photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="mt-1 block text-sm"
+                  onChange={(e) => onFile(e.target.files?.[0])}
+                />
+              </label>
+              {photo && <img src={photo} alt="" className="h-24 rounded-lg object-cover" />}
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  if (!reason.trim()) return toast({ tone: "error", title: "Please explain what’s still wrong" });
+                  const r = verify({
+                    complaintId: c.id,
+                    studentId: session!.id,
+                    outcome: "not_fixed",
+                    reason,
+                    photoUrl: photo,
+                  });
+                  if (r.ok) toast({ tone: "info", title: "Reopened — admin has been alerted" });
+                }}
+              >
+                Reopen complaint
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

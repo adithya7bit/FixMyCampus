@@ -44,7 +44,7 @@ export function StudentHome() {
 
       <div className="mb-6 grid grid-cols-2 gap-2 md:grid-cols-4">
         {counts.map((c) => (
-          <Link key={c.id} to={`/student/complaints?f=${c.id}`}>
+          <Link key={c.id} to={`/student/reports?f=${c.id}`}>
             <Card className="px-4 py-3 transition hover:border-brand-300">
               <p className="text-xs font-medium text-slate-500">{c.label}</p>
               <p className="tabular mt-1 text-2xl font-semibold">{c.n}</p>
@@ -78,22 +78,22 @@ export function StudentHome() {
 
       {awaiting.length > 0 && (
         <section className="mb-8" aria-live="polite">
-          <h2 className="mb-3 text-sm font-semibold tracking-wide text-violet-800 uppercase">
+          <h2 className="mb-3 text-sm font-semibold tracking-wide text-amber-600 dark:text-amber-400 uppercase">
             Awaiting your verification
           </h2>
           <div className="space-y-3">
             {awaiting.map((c) => (
-              <Card key={c.id} className="border-violet-200 p-4 dark:border-violet-900">
+              <Card key={c.id} className="border-amber-400/50 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-950/20 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-medium text-slate-500">{c.publicId}</p>
-                    <h3 className="mt-0.5 font-semibold">{c.title}</h3>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="text-xs font-medium text-amber-600/70 dark:text-amber-400/70">{c.publicId}</p>
+                    <h3 className="mt-0.5 font-semibold text-amber-900 dark:text-amber-100">{c.title}</h3>
+                    <p className="mt-1 text-sm text-amber-800/80 dark:text-amber-200/80">
                       Admin marked this resolved. Is the problem actually fixed?
                     </p>
                   </div>
-                  <Link to={`/student/complaints/${c.id}`}>
-                    <Button variant="teal" size="sm">
+                  <Link to={`/student/reports/${c.id}`}>
+                    <Button className="bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700" size="sm">
                       Confirm
                     </Button>
                   </Link>
@@ -122,7 +122,7 @@ export function StudentHome() {
         <ul className="space-y-2">
           {mine.slice(0, 8).map((c) => (
             <li key={c.id}>
-              <Link to={`/student/complaints/${c.id}`}>
+              <Link to={`/student/reports/${c.id}`}>
                 <Card className="p-4 transition hover:border-slate-300">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-medium text-slate-400">{c.publicId}</p>
@@ -158,16 +158,16 @@ export function StudentList() {
       <PageHeader title="My complaints" description={`${list.length} in this view`} />
       <div className="mb-4 flex flex-wrap gap-2">
         <Link
-          to="/student/complaints"
-          className={`rounded-full px-3 py-1 text-xs font-semibold ${!f ? "bg-slate-900 text-white" : "bg-slate-100 dark:bg-slate-800"}`}
+          to="/student/reports"
+          className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${!f ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-400 dark:hover:bg-slate-800"}`}
         >
           All
         </Link>
         {CHIPS.map((c) => (
           <Link
             key={c.id}
-            to={`/student/complaints?f=${c.id}`}
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${f === c.id ? "bg-slate-900 text-white" : "bg-slate-100 dark:bg-slate-800"}`}
+            to={`/student/reports?f=${c.id}`}
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${f === c.id ? "bg-teal-600 text-white dark:bg-teal-500 dark:text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-400 dark:hover:bg-slate-800"}`}
           >
             {c.label}
           </Link>
@@ -176,7 +176,7 @@ export function StudentList() {
       <ul className="space-y-2">
         {list.map((c) => (
           <li key={c.id}>
-            <Link to={`/student/complaints/${c.id}`}>
+            <Link to={`/student/reports/${c.id}`}>
               <Card className="p-4 hover:border-slate-300">
                 <div className="flex items-start justify-between gap-2">
                   <div>

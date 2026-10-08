@@ -1,18 +1,34 @@
-export type Role = "student" | "admin" | "super_admin" | "worker";
+export type Role =
+  | "student"
+  | "admin"
+  | "super_admin"
+  | "worker"
+  | "FACILITY_MANAGER"
+  | "TECHNICIAN"
+  | "DIRECTOR"
+  | "STUDENT"
+  | "ADMIN";
 
 export type Category =
   | "wifi"
   | "water"
   | "electricity"
+  | "power"
   | "furniture"
   | "food_hygiene"
   | "washroom"
   | "classroom"
   | "security"
   | "infrastructure"
+  | "lift"
+  | "cleanliness"
+  | "laboratory"
+  | "hostel"
+  | "safety"
+  | "general"
   | "other";
 
-export type Priority = "low" | "medium" | "high" | "emergency";
+export type Priority = "low" | "medium" | "high" | "emergency" | "urgent" | "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
 export type Status =
   | "submitted"
@@ -24,9 +40,15 @@ export type Status =
   | "rejected"
   | "reopened"
   | "auto_closed"
-  | "merged";
+  | "merged"
+  | "pending"
+  | "resolved"
+  | "PENDING"
+  | "IN_PROGRESS"
+  | "RESOLVED"
+  | "REOPENED";
 
-export type MediaKind = "before" | "after" | "reopen";
+export type MediaKind = "before" | "after" | "reopen" | "evidence" | "resolution";
 export type MediaType = "image" | "video";
 export type Visibility = "public" | "internal";
 export type Residence = "hostel" | "day_scholar" | "";
@@ -42,12 +64,29 @@ export interface Profile {
   hostel: Residence;
   avatarUrl?: string;
   createdAt: string;
+  impactScore?: number;
+  reportsSubmitted?: number;
+  verifiedFixes?: number;
+  communityVotes?: number;
 }
 
 export interface Department {
   id: string;
   name: string;
   categories: Category[];
+}
+
+export interface Technician {
+  id: string;
+  name: string;
+  specialization: string;
+  availability: "AVAILABLE" | "BUSY" | "OFF_DUTY";
+  currentWorkload: number;
+  activeTickets: number;
+  averageResponseMins: number;
+  phone: string;
+  email?: string;
+  rating: number;
 }
 
 export interface Worker {
@@ -63,7 +102,9 @@ export interface Worker {
 export interface Complaint {
   id: string;
   publicId: string;
+  ticketId?: string; // alias for publicId
   studentId: string;
+  studentName?: string;
   title: string;
   description: string;
   category: Category;
@@ -77,19 +118,33 @@ export interface Complaint {
   room: string;
   departmentId?: string;
   assignedWorkerId?: string;
+  assignedTechnicianId?: string;
+  assignedTechnicianName?: string;
   parentComplaintId?: string;
   reopenCount: number;
   isOverdue: boolean;
   slaDueAt: string;
+  slaDeadline?: string;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
+  reopenedAt?: string;
   closedAt?: string;
-  aiCategory?: Category;
-  aiPriority?: Priority;
+  aiCategory?: string;
+  aiSeverity?: string;
+  aiConfidence?: number;
+  aiReason?: string;
   aiSummary?: string;
   aiHash?: string;
+  urgency?: string;
+  safetyRisk?: boolean;
+  affectedPeople?: number;
   supportCount: number;
+  voteCount?: number;
+  verificationReason?: string;
+  verificationPhotoUrl?: string;
+  resolutionPhoto?: string;
+  resolutionNotes?: string;
 }
 
 export interface ComplaintMedia {
@@ -157,11 +212,21 @@ export interface Notification {
   createdAt: string;
 }
 
+export interface Badge {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  criteria: string;
+  unlocked?: boolean;
+  progress?: number;
+}
+
 export interface AppSettings {
   campusName: string;
   campusCenterLat: number;
   campusCenterLng: number;
-  slaHoursByPriority: Record<Priority, number>;
+  slaHoursByPriority: Record<string, number>;
   autoCloseDays: number;
 }
 

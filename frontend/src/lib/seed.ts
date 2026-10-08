@@ -92,16 +92,19 @@ function buildComplaint(spec: CSpec, seq: number): {
   media: ComplaintMedia[];
   events: ComplaintEvent[];
 } {
-  const id = `cmp_${String(seq).padStart(3, "0")}`;
-  const publicId = `FMC-2026-${String(seq).padStart(6, "0")}`;
+  const ticketSeq = seq < 4820 ? 4820 + seq : seq;
+  const id = `cmp_${String(ticketSeq).padStart(6, "0")}`;
+  const publicId = `CMP-2026-${String(ticketSeq).padStart(6, "0")}`;
   const createdAt = daysAgo(spec.days, spec.hours ?? 9 + (seq % 8));
   const updatedAt = daysAgo(Math.max(0, spec.days - 1), 16);
   const pos = loc(spec.lat, spec.lng);
-  const slaH = DEFAULT_SLA[spec.priority];
+  const slaH = DEFAULT_SLA[spec.priority] || 24;
   const slaDueAt = new Date(new Date(createdAt).getTime() + slaH * 36e5).toISOString();
   const deptId =
     spec.deptId ||
-    DEPARTMENTS_SEED.find((d) => d.categories.includes(spec.category))?.id;
+    DEPARTMENTS_SEED.find((d) => d.categories.includes(spec.category))?.id ||
+    "dept-maint";
+
 
   const c: Complaint = {
     id,
@@ -245,91 +248,92 @@ export function createSeed(): SeedState {
   ];
 
   const specs: CSpec[] = [
-    // Priya's complaints — drive the demo dashboard
+    // Section 47 Core Demo Reports
     {
-      n: 1,
+      n: 1, // CMP-2026-004821
       studentId: "u_priya",
-      title: "Continuous drip from Hostel H1 bathroom ceiling",
-      description: "The shower pipe in H1 second-floor washroom has been leaking for two days. Water pools near the electrical socket. Nearby rooms are getting damp.",
+      title: "Broken Elevator",
+      description: "Main passenger elevator stuck on 3rd floor with jerky movements and alarm chiming repeatedly.",
+      category: "lift",
+      priority: "emergency", // mapped to URGENT
+      status: "submitted",
+      lat: 28.5458,
+      lng: 77.1922,
+      floor: "3rd Floor",
+      room: "Lift Shaft 1",
+      days: 0,
+      hours: 2,
+      photo: PHOTO.elevator,
+      support: 14,
+    },
+    {
+      n: 2, // CMP-2026-004822
+      studentId: "u_priya",
+      title: "Water Leakage",
+      description: "Major pipe rupture under corridor washroom basin causing water accumulation on floor.",
       category: "water",
       priority: "high",
-      status: "submitted",
-      lat: 28.54382,
-      lng: 77.19185,
-      floor: "2",
-      room: "Washroom",
-      days: 0,
-      hours: 8,
-      photo: PHOTO.water,
-      support: 3,
-    },
-    {
-      n: 2,
-      studentId: "u_priya",
-      title: "Wi-Fi dead zone in Academic Block A, Lab 3",
-      description: "Campus Wi-Fi drops every few minutes in Lab 3. Cannot submit assignments during lab hours. SSID Meridian-Student shows full bars but no packets.",
-      category: "wifi",
-      priority: "high",
       status: "in_progress",
-      lat: 28.54575,
-      lng: 77.19215,
-      floor: "1",
-      room: "Lab 3",
-      days: 4,
-      workerId: "w_suresh",
-      deptId: "dept-it",
-      photo: PHOTO.classroom,
+      lat: 28.5436,
+      lng: 77.1932,
+      floor: "2nd Floor",
+      room: "Washroom B2",
+      days: 1,
+      workerId: "w_ramesh",
+      photo: PHOTO.water,
+      support: 8,
     },
     {
-      n: 3,
-      studentId: "u_priya",
-      title: "Broken bench in Central Library reading hall",
-      description: "Three-seater wooden bench near the west windows has a cracked leg. It wobbles and nearly tipped when I sat down.",
-      category: "furniture",
+      n: 3, // CMP-2026-004823
+      studentId: "u_arjun",
+      title: "Wi-Fi Down",
+      description: "Eduroam access point offline across south wing classrooms. Zero connectivity during lecture.",
+      category: "wifi",
       priority: "medium",
-      status: "resolved_pending_verification",
-      lat: 28.54482,
-      lng: 77.19278,
-      floor: "Ground",
-      room: "Reading hall",
-      days: 6,
-      workerId: "w_amit",
-      photo: PHOTO.furniture,
-      afterPhoto: PHOTO.classroom,
-    },
-    {
-      n: 4,
-      studentId: "u_priya",
-      title: "Cockroach in dal at Central Mess, dinner",
-      description: "Found a cockroach in the dal during dinner at Central Mess counter 2. Several students saw it. This is a health hazard.",
-      category: "food_hygiene",
-      priority: "emergency",
-      status: "closed_verified",
-      lat: 28.54402,
-      lng: 77.19252,
-      floor: "Ground",
-      room: "Counter 2",
-      days: 18,
-      workerId: "w_raman",
-      deptId: "dept-mess",
-      photo: PHOTO.food,
-      reopenCount: 1,
-    },
-    {
-      n: 5,
-      studentId: "u_priya",
-      title: "Corridor lights out near Hostel H1 stairs",
-      description: "The entire stairwell between floors 1 and 3 is dark after 7pm. Unsafe, especially for women returning from library.",
-      category: "electricity",
-      priority: "high",
-      status: "assigned",
-      lat: 28.54378,
-      lng: 77.1917,
-      floor: "1–3",
-      room: "Stairwell",
+      status: "submitted",
+      lat: 28.5452,
+      lng: 77.1942,
+      floor: "1st Floor",
+      room: "Room 104",
       days: 2,
+      workerId: "w_suresh",
+      photo: PHOTO.classroom,
+      support: 11,
+    },
+    {
+      n: 4, // CMP-2026-004824
+      studentId: "u_ananya",
+      title: "Electrical Hazard",
+      description: "Exposed 440V wire near lab workbench with occasional sparking when switch is activated.",
+      category: "electricity",
+      priority: "emergency",
+      status: "in_progress",
+      lat: 28.5450,
+      lng: 77.1915,
+      floor: "Ground Floor",
+      room: "Lab 03",
+      days: 0,
       workerId: "w_vijay",
       photo: PHOTO.electrical,
+      support: 18,
+    },
+    {
+      n: 5, // CMP-2026-004825
+      studentId: "u_priya",
+      title: "Broken Classroom Fan",
+      description: "Ceiling fan regulator not working and blades produce severe rattling vibration.",
+      category: "classroom",
+      priority: "low",
+      status: "resolved_pending_verification",
+      lat: 28.5456,
+      lng: 77.1935,
+      floor: "2nd Floor",
+      room: "Classroom 204",
+      days: 3,
+      workerId: "w_vijay",
+      photo: PHOTO.classroom,
+      afterPhoto: PHOTO.fan_fixed,
+      support: 3,
     },
     // Nearby open water complaint — duplicate detection for demo
     {

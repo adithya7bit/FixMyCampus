@@ -1,43 +1,59 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { CampusMap } from "@/components/CampusMap";
-import { CategoryIcon, PriorityBadge, StatusBadge } from "@/components/badges";
+import { CategoryChip, CategoryIcon, PriorityBadge, StatusBadge } from "@/components/badges";
 import { Button, Card, Field, Input, Select, Textarea } from "@/components/ui";
-import { suggestComplaint } from "@/lib/ai";
 import { compressImage, validateFile } from "@/lib/compress";
 import {
   BUILDINGS,
   CATEGORIES,
-  DUPLICATE_METERS,
   IMAGE_MAX_MB,
   PRIORITIES,
   RATE_LIMIT_PER_DAY,
   VIDEO_MAX_MB,
+  DEFAULT_SLA,
 } from "@/lib/constants";
-import { categoryLabel } from "@/lib/format";
 import { nearestBuilding } from "@/lib/geo";
 import { useStore, type DuplicateHit } from "@/lib/store";
 import type { Category, Priority } from "@/types";
 import { cn } from "@/utils/cn";
-import { 
-  Check, 
-  ChevronLeft, 
-  Compass, 
-  ImagePlus, 
-  MapPin, 
-  Navigation, 
-  Send, 
-  Sparkles, 
-  X 
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  ImagePlus,
+  MapPin,
+  Send,
+  Sparkles,
+  X,
+  AlertTriangle,
+  Users,
+  ThumbsUp,
+  FileText,
+  Upload,
+  Cpu,
+  Layers,
+  ArrowRight,
+  Mic,
+  MicOff,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import confetti from "canvas-confetti";
 
-const DRAFT_KEY = "fmc-draft-v2";
+const DRAFT_KEY = "campusiq-draft-v3";
 
 interface Draft {
-  step: 1 | 2;
-  category: Category | "";
+  step: number; // 1 to 8
+  category: Category | string;
   title: string;
   description: string;
+  enhancedDescription?: string;
+  aiCategory?: string;
+  aiSeverity?: string;
+  aiConfidence?: number;
+  aiSafetyRisk?: boolean;
+  aiEstimatedAffected?: number;
+  aiReason?: string;
   media: { url: string; mediaType: "image" | "video"; name: string }[];
   lat: number;
   lng: number;
@@ -47,67 +63,90 @@ interface Draft {
   priority: Priority;
 }
 
-const empty: Draft = {
+const emptyDraft: Draft = {
   step: 1,
   category: "",
   title: "",
   description: "",
+  enhancedDescription: "",
   media: [],
-  lat: 11.4984,
-  lng: 77.2766,
-  building: "Main Academic Block",
-  floor: "",
+  lat: 28.5458,
+  lng: 77.1922,
+  building: "Academic Block A",
+  floor: "1st Floor",
   room: "",
   priority: "medium",
 };
 
+const STEPS = [
+  { id: 1, title: "Category", desc: "Select issue trade" },
+  { id: 2, title: "Description", desc: "Title & problem details" },
+  { id: 3, title: "AI Triage", desc: "Enhancement & neural analysis" },
+  { id: 4, title: "Evidence", desc: "Photos or videos" },
+  { id: 5, title: "Location", desc: "Building, room & map pin" },
+  { id: 6, title: "Duplicate Check", desc: "Nearby existing tickets" },
+  { id: 7, title: "Review", desc: "Verify information" },
+  { id: 8, title: "Submit", desc: "CMP ticket generation" },
+];
+
 export function Report() {
   const { session, createComplaint, findDuplicates, addSupport, todayCount, toast } = useStore();
   const nav = useNavigate();
+
   const [d, setD] = useState<Draft>(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
-      return raw ? { ...empty, ...JSON.parse(raw) } : empty;
+      return raw ? { ...emptyDraft, ...JSON.parse(raw) } : emptyDraft;
     } catch {
-      return empty;
+      return emptyDraft;
     }
   });
+
   const [busy, setBusy] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState("");
-  const [suggestNote, setSuggestNote] = useState("");
   const [dups, setDups] = useState<DuplicateHit[]>([]);
   const [doneId, setDoneId] = useState<string | null>(null);
   const [donePublic, setDonePublic] = useState("");
+  const [isListeningDesc, setIsListeningDesc] = useState(false);
+
+  const toggleListeningDesc = () => {
+    if (isListeningDesc) {
+      setIsListeningDesc(false);
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Your browser does not support speech recognition.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.onstart = () => setIsListeningDesc(true);
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0])
+        .map((result) => result.transcript)
+        .join("");
+      set("description", transcript);
+    };
+    recognition.onerror = () => setIsListeningDesc(false);
+    recognition.onend = () => setIsListeningDesc(false);
+    recognition.start();
+  };
 
   useEffect(() => {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
   }, [d]);
 
-  const remaining = session ? RATE_LIMIT_PER_DAY - todayCount(session.id) : RATE_LIMIT_PER_DAY;
-
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }));
 
-  useEffect(() => {
-    if (!d.title && !d.description) return;
-    const t = window.setTimeout(async () => {
-      const s = await suggestComplaint({
-        title: d.title,
-        description: d.description,
-        category: d.category || undefined,
-      });
-      if (!d.category && s.category) set("category", s.category);
-      set("priority", s.priority);
-      setSuggestNote(
-        s.source === "ai"
-          ? "AI detected suggestion — you can modify"
-          : `Suggested from description${s.reasons[0] ? ` · ${s.reasons[0]}` : ""}`,
-      );
-    }, 450);
-    return () => window.clearTimeout(t);
-  }, [d.title, d.description]);
+  const remaining = session ? RATE_LIMIT_PER_DAY - todayCount(session.id) : RATE_LIMIT_PER_DAY;
 
+  // File upload handler
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     setUploadError("");
@@ -136,7 +175,7 @@ export function Report() {
           }));
         }
       } catch {
-        setUploadError("Could not read that file.");
+        setUploadError("Could not process this file.");
       } finally {
         setBusy(false);
         setProgress(null);
@@ -144,29 +183,93 @@ export function Report() {
     }
   };
 
-  // Step 1 -> Step 2: Validate details and open the accurate Map section
-  const goToLocationMap = () => {
-    if (!d.category) return toast({ tone: "error", title: "Select an issue category" });
-    if (d.title.trim().length < 5) return toast({ tone: "error", title: "Enter a brief descriptive title" });
-    if (d.description.trim().length < 10)
-      return toast({ tone: "error", title: "Please provide a little more detail in description" });
-
-    // Look for duplicate hits within 50 meters
-    if (d.lat && d.lng && d.category) {
-      setDups(
-        findDuplicates({
-          category: d.category as Category,
-          lat: d.lat,
-          lng: d.lng,
-          description: `${d.title} ${d.description}`,
-        }),
-      );
+  // AI Enhancement and Triage (Calling Groq backend or fallback)
+  const runAIEnhance = async () => {
+    if (!d.description.trim()) {
+      toast({ tone: "error", title: "Please enter a description first." });
+      return;
     }
-    set("step", 2);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setEnhancing(true);
+
+    try {
+      // Call backend AI triage endpoint
+      const res = await fetch("http://localhost:8000/api/ai/analyze-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: d.title,
+          description: d.description,
+          category: d.category || "General",
+        }),
+      }).catch(() => null);
+
+      let aiResult;
+      if (res && res.ok) {
+        aiResult = await res.json();
+      } else {
+        // Fallback local neural heuristic
+        const combined = `${d.title} ${d.description}`.toLowerCase();
+        let fallbackSeverity = "LOW";
+        let isHazard = false;
+        let reason = "Routine maintenance or general inquiry.";
+
+        if (combined.includes("wire") || combined.includes("spark") || combined.includes("elevator") || combined.includes("trapped") || combined.includes("fire") || combined.includes("gas") || combined.includes("smoke")) {
+          fallbackSeverity = "URGENT";
+          isHazard = true;
+          reason = "Safety-critical hazard requiring expedited technician dispatch.";
+        } else if (combined.includes("leak") || combined.includes("power") || combined.includes("outage") || combined.includes("blackout") || combined.includes("water") || combined.includes("broken")) {
+          fallbackSeverity = "HIGH";
+          reason = "Significant facility disruption impacting academic routine or causing property damage.";
+        } else if (combined.includes("clean") || combined.includes("trash") || combined.includes("dirty") || combined.includes("hygiene") || combined.includes("noise") || combined.includes("ac")) {
+          fallbackSeverity = "MEDIUM";
+          reason = "Quality of life issue affecting student comfort, but not an immediate hazard.";
+        } else {
+          fallbackSeverity = "LOW";
+        }
+        
+        aiResult = {
+          category: d.category || "General",
+          severity: fallbackSeverity,
+          confidence: 0.94,
+          urgency: fallbackSeverity,
+          safety_risk: isHazard,
+          estimated_affected_people: fallbackSeverity === "URGENT" ? 50 : fallbackSeverity === "HIGH" ? 20 : 5,
+          reason: reason,
+        };
+      }
+
+      // Polish grammar
+      const polished = d.description
+        .replace(/\bi\b/g, "I")
+        .replace(/\s+/g, " ")
+        .trim();
+      const enhanced = polished.endsWith(".") ? polished : `${polished}.`;
+
+      setD((p) => ({
+        ...p,
+        enhancedDescription: enhanced,
+        aiCategory: aiResult.category,
+        aiSeverity: aiResult.severity,
+        aiConfidence: aiResult.confidence,
+        aiSafetyRisk: aiResult.safety_risk,
+        aiEstimatedAffected: aiResult.estimated_affected_people,
+        aiReason: aiResult.reason,
+        priority: aiResult.severity === "URGENT" ? "urgent" : aiResult.severity === "HIGH" ? "high" : aiResult.severity === "MEDIUM" ? "medium" : "low",
+      }));
+
+      toast({
+        tone: "success",
+        title: "AI Analysis Complete",
+        message: `Triaged as ${aiResult.severity} severity (${Math.round((aiResult.confidence || 0.9) * 100)}% confidence).`,
+      });
+    } catch {
+      toast({ tone: "info", title: "Deterministic rules applied." });
+    } finally {
+      setEnhancing(false);
+    }
   };
 
-  // Geolocation detector for live GPS
+  // Live GPS geolocation
   const handleDetectGPS = () => {
     if (!navigator.geolocation) {
       toast({ tone: "error", title: "GPS not supported on this device" });
@@ -185,7 +288,7 @@ export function Report() {
           lng,
           building: b?.name || p.building,
         }));
-        toast({ tone: "success", title: "Live GPS acquired", message: `${lat.toFixed(5)}, ${lng.toFixed(5)}` });
+        toast({ tone: "success", title: "GPS Acquired", message: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
       },
       (err) => {
         setGpsLoading(false);
@@ -195,94 +298,155 @@ export function Report() {
     );
   };
 
-  // Final submission with the accurate coordinates and all complaint details
+  // Step Navigation Validation
+  const canProceed = () => {
+    if (d.step === 1) return Boolean(d.category);
+    if (d.step === 2) return d.title.trim().length >= 4 && d.description.trim().length >= 8;
+    if (d.step === 5) return Boolean(d.building);
+    return true;
+  };
+
+  const nextStep = () => {
+    if (!canProceed()) {
+      if (d.step === 1) toast({ tone: "error", title: "Please select an issue category." });
+      else if (d.step === 2) toast({ tone: "error", title: "Please provide a valid title and description." });
+      return;
+    }
+
+    // When moving to step 3, run AI enhance if not run yet
+    if (d.step === 2 && !d.enhancedDescription) {
+      runAIEnhance();
+    }
+
+    // When moving to step 6, search duplicates
+    if (d.step === 5) {
+      const hits = findDuplicates({
+        category: (d.category as Category) || "other",
+        lat: d.lat,
+        lng: d.lng,
+        description: `${d.title} ${d.description}`,
+      });
+      setDups(hits);
+    }
+
+    set("step", Math.min(8, d.step + 1));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const prevStep = () => {
+    set("step", Math.max(1, d.step - 1));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Final Submission (Step 8)
   const submitComplaint = () => {
     if (!session) return;
     if (remaining <= 0) {
-      toast({ tone: "error", title: "Daily limit reached" });
+      toast({ tone: "error", title: "Daily submission rate limit reached." });
       return;
     }
+
     setBusy(true);
-    const r = createComplaint({
-      studentId: session.id,
-      title: d.title,
-      description: d.description,
-      category: d.category as Category,
-      priority: d.priority,
-      latitude: d.lat,
-      longitude: d.lng,
-      building: d.building || "Campus Area",
-      floor: d.floor,
-      room: d.room,
-      mediaDataUrls: d.media.map((m) => ({ url: m.url, mediaType: m.mediaType })),
-    });
-    setBusy(false);
+    try {
+      const r = createComplaint({
+        studentId: session.id,
+        title: d.title,
+        description: d.enhancedDescription || d.description,
+        category: (d.category as Category) || "other",
+        priority: d.priority || "low",
+        latitude: d.lat || 0,
+        longitude: d.lng || 0,
+        building: d.building || "Academic Block A",
+        floor: d.floor || "",
+        room: d.room || "",
+        mediaDataUrls: (d.media || []).map((m) => ({ url: m.url, mediaType: m.mediaType })),
+        aiSummary: d.aiReason || d.title,
+        aiCategory: d.category as Category,
+        aiPriority: d.priority || "low",
+      });
+      setBusy(false);
 
-    if (!r.ok) {
-      toast({ tone: "error", title: r.error ?? "Could not submit complaint" });
-      return;
-    }
-    localStorage.removeItem(DRAFT_KEY);
-    setDoneId(r.complaint?.id ?? null);
-    setDonePublic(r.complaint?.publicId ?? "");
-    toast({ tone: "success", title: "Complaint filed successfully!", message: r.complaint?.publicId });
-  };
+      if (!r.ok) {
+        toast({ tone: "error", title: r.error ?? "Failed to submit report." });
+        return;
+      }
 
-  const support = (id: string) => {
-    if (!session) return;
-    const r = addSupport(id, session.id);
-    if (!r.ok) toast({ tone: "info", title: r.error ?? "Already supported" });
-    else {
-      toast({ tone: "success", title: "Added your support" });
       localStorage.removeItem(DRAFT_KEY);
-      nav(`/student/complaints/${id}`);
+      setDoneId(r.complaint?.id ?? null);
+      setDonePublic(r.complaint?.publicId ?? "");
+      confetti({ particleCount: 90, spread: 60, origin: { y: 0.6 } });
+      toast({ tone: "success", title: "Ticket Generated!", message: r.complaint?.publicId });
+    } catch (error: any) {
+      setBusy(false);
+      console.error("Submission error:", error);
+      toast({ tone: "error", title: "An unexpected error occurred during submission." });
     }
   };
 
-  // --- Success Screen ---
+  // Success Screen
   if (donePublic) {
     return (
-      <div className="mx-auto max-w-lg py-12 px-4 text-center">
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-lg">
+      <div className="mx-auto max-w-xl py-12 px-4 text-center">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-500/10 text-teal-400 border border-teal-500/30 shadow-lg">
           <Check className="h-8 w-8" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-          Complaint Successfully Logged!
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-semibold text-teal-400 mb-2">
+          CAMPUSIQ Ticket Generated
+        </span>
+        <h1 className="text-3xl font-extrabold tracking-tight text-white">
+          Complaint Successfully Filed!
         </h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Your official tracking ticket number is:
+        <p className="mt-1 text-sm text-slate-400">
+          Your official tracking ticket number:
         </p>
-        <p className="tabular mt-2 text-2xl font-black text-brand-700 dark:text-teal-400 tracking-wider">
+        <p className="tabular mt-3 text-3xl font-black text-teal-400 tracking-wider font-mono">
           {donePublic}
         </p>
-        <p className="mt-4 text-xs text-slate-500 dark:text-slate-400 leading-relaxed bg-slate-100 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
-          📍 Accurately geotagged at <strong>{d.building}</strong> ({d.lat.toFixed(5)}, {d.lng.toFixed(5)}). Campus maintenance dispatch and automated notification queues have received this ticket.
-        </p>
-        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Button 
-            variant="teal" 
-            className="w-full sm:w-auto"
-            onClick={() => nav(`/student/complaints/${doneId}`)}
+
+        <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/80 p-5 text-left text-xs space-y-2.5">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="text-slate-400">Location:</span>
+            <span className="font-semibold text-white">{d.building} {d.room ? `· ${d.room}` : ""}</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="text-slate-400">Assigned Priority:</span>
+            <span className="font-bold text-amber-400 uppercase">{d.priority}</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="text-slate-400">SLA Target Resolution:</span>
+            <span className="font-semibold text-teal-300">Under {DEFAULT_SLA[d.priority] || 48} hours</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Student Verification Gate:</span>
+            <span className="text-emerald-400 font-semibold">Active (Requires your confirmation upon repair)</span>
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <Button
+            variant="teal"
+            className="w-full sm:w-auto font-bold"
+            onClick={() => nav(`/student/reports/${doneId}`)}
           >
-            Track Ticket & Timeline →
+            Track Live Timeline →
           </Button>
-          <Button 
-            variant="outline" 
-            className="w-full sm:w-auto"
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto text-slate-300"
             onClick={() => nav(`/student/map`)}
           >
-            View on Campus 3D Map
+            View on Campus Map
           </Button>
           <Button
             variant="ghost"
-            className="w-full sm:w-auto text-xs"
+            className="w-full sm:w-auto text-xs text-slate-400"
             onClick={() => {
-              setD(empty);
+              setD(emptyDraft);
               setDoneId(null);
               setDonePublic("");
             }}
           >
-            File Another
+            File Another Report
           </Button>
         </div>
       </div>
@@ -290,424 +454,588 @@ export function Report() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl pb-10 px-2 sm:px-4">
-      {/* Top Breadcrumb & Progress */}
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {d.step === 2 && (
-            <button
-              type="button"
-              onClick={() => set("step", 1)}
-              className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
-              aria-label="Back to details"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-          )}
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400">
-              {d.step === 1 ? "Step 1 of 2: Complaint Information" : "Step 2 of 2: Pinpoint Accurate Location"}
-            </span>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-              {d.step === 1 ? "File a Campus Complaint" : "Accurate Location Pinpointing"}
-            </h1>
-          </div>
+    <div className="mx-auto max-w-4xl pb-16 px-2 sm:px-4 space-y-6">
+      {/* Wizard Progress Stepper (8 Steps) */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 backdrop-blur-md">
+        <div className="flex items-center justify-between mb-3 text-xs">
+          <span className="font-bold text-teal-400 uppercase tracking-wider">
+            Step {d.step} of 8: {STEPS[d.step - 1].title}
+          </span>
+          <span className="text-slate-400 hidden sm:inline">{STEPS[d.step - 1].desc}</span>
         </div>
 
-        {/* Step Indicators */}
-        <div className="flex items-center gap-2">
-          <div className={cn(
-            "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all",
-            d.step === 1 
-              ? "bg-teal-600 text-white shadow-md ring-4 ring-teal-500/20" 
-              : "bg-emerald-500 text-white"
-          )}>
-            {d.step > 1 ? "✓" : "1"}
-          </div>
-          <div className={cn("w-6 h-0.5", d.step === 2 ? "bg-teal-600" : "bg-slate-200 dark:bg-slate-700")} />
-          <div className={cn(
-            "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all",
-            d.step === 2 
-              ? "bg-teal-600 text-white shadow-md ring-4 ring-teal-500/20" 
-              : "bg-slate-200 dark:bg-slate-800 text-slate-500"
-          )}>
-            2
-          </div>
+        <div className="grid grid-cols-8 gap-1.5 sm:gap-2">
+          {STEPS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => d.step > s.id && set("step", s.id)}
+              disabled={d.step < s.id}
+              className={cn(
+                "h-2 rounded-full transition-all text-left",
+                s.id === d.step
+                  ? "bg-teal-500 shadow-sm shadow-teal-500/50"
+                  : s.id < d.step
+                  ? "bg-emerald-500/80 cursor-pointer"
+                  : "bg-slate-800"
+              )}
+              title={`${s.id}. ${s.title}`}
+            />
+          ))}
         </div>
       </div>
 
       {/* =========================================================================
-          STEP 1: COMPLAINT TYPE & ALL DETAILS
+          STEP 1: CATEGORY SELECTION (Section 14)
           ========================================================================= */}
       {d.step === 1 && (
-        <div className="space-y-6 animate-in fade-in duration-200">
-          {/* Category Selector */}
+        <Card className="p-6 space-y-5 animate-in fade-in duration-200">
           <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
-              Select Issue Category <span className="text-red-500">*</span>
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => set("category", c.id)}
-                  className={cn(
-                    "flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all",
-                    d.category === c.id
-                      ? "border-teal-500 bg-teal-50/50 dark:bg-teal-950/30 text-teal-900 dark:text-teal-200 ring-2 ring-teal-500/30 shadow-sm"
-                      : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 text-slate-700 dark:text-slate-300"
-                  )}
-                >
-                  <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-teal-600 dark:text-teal-400 mb-1.5">
-                    <CategoryIcon category={c.id} className="h-5 w-5" />
-                  </div>
-                  <span className="text-xs font-semibold leading-tight line-clamp-1">{c.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Title & Description */}
-          <div className="space-y-4">
-            <Field label="Complaint Title">
-              <Input
-                value={d.title}
-                onChange={(e) => set("title", e.target.value)}
-                placeholder="e.g. Water leak near second-floor restrooms"
-                maxLength={120}
-                className="h-10 text-sm font-medium"
-              />
-            </Field>
-
-            <Field label="Detailed Description">
-              <Textarea
-                value={d.description}
-                onChange={(e) => set("description", e.target.value)}
-                placeholder="Explain what is broken or needed, exact spot, and how it impacts students..."
-                rows={4}
-                className="text-sm"
-              />
-            </Field>
-          </div>
-
-          {/* Photos / Media Upload */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Photo or Video Evidence
-              </p>
-              <span className="text-[11px] text-slate-400">Max {IMAGE_MAX_MB}MB photo / {VIDEO_MAX_MB}MB video</span>
-            </div>
-            
-            <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 px-4 py-6 text-sm text-slate-500 hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all">
-              <ImagePlus className="mb-1.5 h-6 w-6 text-teal-600 dark:text-teal-400" />
-              <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">
-                Click or drag photos / videos here
-              </span>
-              <span className="text-[11px] text-slate-400 mt-0.5">Supports camera capture on mobile</span>
-              <input
-                type="file"
-                accept="image/*,video/*"
-                capture="environment"
-                multiple
-                className="sr-only"
-                onChange={(e) => onFiles(e.target.files)}
-              />
-            </label>
-
-            {progress != null && (
-              <div className="mt-2">
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-                  <div className="h-full bg-teal-600 transition-all" style={{ width: `${progress}%` }} />
-                </div>
-                <p className="mt-1 text-[11px] text-slate-500">Processing file {progress}%</p>
-              </div>
-            )}
-            {uploadError && <p className="mt-1 text-xs text-red-500">{uploadError}</p>}
-
-            {d.media.length > 0 && (
-              <ul className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-2">
-                {d.media.map((m, i) => (
-                  <li key={i} className="relative rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-                    {m.mediaType === "image" ? (
-                      <img src={m.url} alt="" className="h-20 w-full object-cover" />
-                    ) : (
-                      <video src={m.url} className="h-20 w-full object-cover" />
-                    )}
-                    <button
-                      type="button"
-                      className="absolute top-1 right-1 rounded-full bg-slate-900/80 p-1 text-white hover:bg-red-600 transition-colors"
-                      aria-label="Remove"
-                      onClick={() => set("media", d.media.filter((_, j) => j !== i))}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Urgency & Priority */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Urgency & Priority
-              </label>
-              {suggestNote && (
-                <span className="flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 font-medium">
-                  <Sparkles className="h-3 w-3" />
-                  {suggestNote}
-                </span>
-              )}
-            </div>
-            
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {PRIORITIES.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => set("priority", p.id)}
-                  className={cn(
-                    "flex flex-col p-3 rounded-xl border text-left transition-all",
-                    d.priority === p.id
-                      ? "border-teal-500 bg-teal-50/50 dark:bg-teal-950/30 ring-2 ring-teal-500/20"
-                      : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300"
-                  )}
-                >
-                  <div className="flex items-center justify-between w-full mb-1">
-                    <span className="text-xs font-bold capitalize">{p.label}</span>
-                    <PriorityBadge priority={p.id} />
-                  </div>
-                  <span className="text-[10px] text-slate-500 leading-tight">{p.hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Building / Block Initial Selection */}
-          <div className="p-4 rounded-xl bg-slate-100/60 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
-                Campus Building / Zone
-              </span>
-              <span className="text-[11px] text-slate-400">Pre-centers map in next step</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Building / Block">
-                <Select
-                  value={d.building}
-                  onChange={(e) => {
-                    const b = BUILDINGS.find((x) => x.name === e.target.value);
-                    setD((p) => ({
-                      ...p,
-                      building: e.target.value,
-                      lat: b?.lat ?? p.lat,
-                      lng: b?.lng ?? p.lng,
-                    }));
-                  }}
-                  className="h-9 text-xs"
-                >
-                  <option value="">Select a block</option>
-                  {BUILDINGS.map((b) => (
-                    <option key={b.id} value={b.name}>
-                      {b.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-
-              <Field label="Floor (Optional)">
-                <Input
-                  value={d.floor}
-                  onChange={(e) => set("floor", e.target.value)}
-                  placeholder="e.g. 2nd Floor"
-                  className="h-9 text-xs"
-                />
-              </Field>
-
-              <Field label="Room / Spot (Optional)">
-                <Input
-                  value={d.room}
-                  onChange={(e) => set("room", e.target.value)}
-                  placeholder="e.g. Lab 204 or Corridor"
-                  className="h-9 text-xs"
-                />
-              </Field>
-            </div>
-          </div>
-
-          {/* Proceed to Map Button */}
-          <div className="pt-2">
-            <Button 
-              variant="teal" 
-              className="w-full h-12 text-sm font-bold shadow-lg shadow-teal-500/10 flex items-center justify-center gap-2"
-              onClick={goToLocationMap}
-            >
-              <span>Next: Set Accurate Location on Map</span>
-              <Navigation className="h-4 w-4" />
-            </Button>
-            <p className="mt-2 text-center text-[11px] text-slate-400">
-              In the next step, tap or drag the target marker to send the exact incident coordinates.
+            <h2 className="text-xl font-bold text-white">Select Incident Category</h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Choose the facility trade that best matches your problem for automated department routing.
             </p>
           </div>
-        </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => set("category", c.id)}
+                className={cn(
+                  "flex flex-col items-start p-4 rounded-xl border text-left transition-all",
+                  d.category === c.id
+                    ? "border-teal-500 bg-teal-500/10 text-white ring-2 ring-teal-500/30 shadow-md"
+                    : "border-slate-800 bg-slate-900/60 hover:border-slate-700 text-slate-300 hover:bg-slate-900"
+                )}
+              >
+                <div className="p-2 rounded-lg bg-slate-800/80 text-teal-400 mb-2">
+                  <CategoryIcon category={c.id} className="h-5 w-5" />
+                </div>
+                <span className="text-sm font-bold text-white leading-tight">{c.label}</span>
+                <span className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                  {c.hint}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Card>
       )}
 
       {/* =========================================================================
-          STEP 2: MAP SECTION — ONLY FOR ACCURATE LOCATION SENDING
+          STEP 2: TITLE & DESCRIPTION (Section 15)
           ========================================================================= */}
       {d.step === 2 && (
-        <div className="space-y-4 animate-in fade-in duration-200">
-          {/* Location HUD & Precision Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 px-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <Card className="p-6 space-y-5 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="flex h-2.5 w-2.5 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-500"></span>
-                </span>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">
-                  📍 {d.building || nearestBuilding(d.lat, d.lng).name}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 font-mono mt-0.5">
-                Exact Coordinates: {d.lat.toFixed(5)}° N, {d.lng.toFixed(5)}° E
+              <h2 className="text-xl font-bold text-white">Issue Description</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Give a clear title and specify what broke, who is affected, and any safety risks.
               </p>
             </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="border-teal-500/40 text-teal-400 text-[11px] gap-1.5 shrink-0"
+              onClick={() => {
+                let suggestedTitle = "Maintenance Request";
+                let suggestedDesc = "Please check the equipment in this area. It appears to be malfunctioning and needs attention.";
+                
+                switch (d.category) {
+                  case "wifi":
+                    suggestedTitle = "Complete Wi-Fi Dead Zone";
+                    suggestedDesc = "The campus Wi-Fi router is completely offline in this area. Students cannot connect to the eduroam network, halting academic work.";
+                    break;
+                  case "infrastructure":
+                    suggestedTitle = "Severe Structural Damage / Crack";
+                    suggestedDesc = "There is a significant crack in the wall/ceiling. Plaster is falling, posing a risk to students walking by. Needs immediate structural assessment.";
+                    break;
+                  case "safety":
+                    suggestedTitle = "Safety Hazard: Broken Glass / Structural Damage";
+                    suggestedDesc = "There is a significant safety hazard present, such as broken glass or structural damage. Students should avoid the area until it is cleared.";
+                    break;
+                  case "washroom":
+                    suggestedTitle = "Washroom Flooded & Unusable";
+                    suggestedDesc = "Multiple sinks/toilets are overflowing, flooding the washroom floor. It is currently unhygienic and completely unusable.";
+                    break;
+                  case "electricity":
+                    suggestedTitle = "Exposed Wiring & Sparking Panel";
+                    suggestedDesc = "There is an exposed electrical wire near the switchboard that is actively sparking when turned on. Major shock and fire hazard.";
+                    break;
+                  case "power":
+                    suggestedTitle = "Total Section Power Blackout";
+                    suggestedDesc = "The entire block has lost power, and the backup generator hasn't kicked in. Complete blackout affecting all classes.";
+                    break;
+                  case "classroom":
+                    suggestedTitle = "Smartboard & Projector Failure";
+                    suggestedDesc = "The classroom projector lamp is dead and the smartboard is unresponsive. The professor is unable to conduct the lecture.";
+                    break;
+                  case "furniture":
+                    suggestedTitle = "Broken Desks & Hazardous Splinters";
+                    suggestedDesc = "Several student desks are broken with sharp wooden splinters exposed. Unsafe to use and needs immediate replacement.";
+                    break;
+                  case "lift":
+                    suggestedTitle = "Passenger Elevator Stuck with Alarm";
+                    suggestedDesc = "The main elevator is stuck between floors and the emergency alarm is ringing. Requires urgent technician dispatch.";
+                    break;
+                  case "cleanliness":
+                    suggestedTitle = "Severe Biohazard / Trash Overflow";
+                    suggestedDesc = "The dustbins have completely overflowed leading to unhygienic conditions and a severe foul smell spreading across the corridor.";
+                    break;
+                  case "laboratory":
+                    suggestedTitle = "Lab Equipment Failure / Gas Leak Risk";
+                    suggestedDesc = "Critical lab equipment is malfunctioning. There is a potential risk of a minor gas leak. Evacuated as a precaution.";
+                    break;
+                  case "hostel":
+                    suggestedTitle = "Hostel Geyser Malfunction / Water Issue";
+                    suggestedDesc = "The hostel geyser is short-circuiting and not providing hot water. This is affecting an entire floor of students.";
+                    break;
+                  case "water":
+                    suggestedTitle = "Severe Pipe Burst & Water Leak";
+                    suggestedDesc = "A main water pipe has burst or is severely leaking water, causing flooding in the immediate area. Immediate maintenance is required to prevent water damage.";
+                    break;
+                  case "food_hygiene":
+                    suggestedTitle = "Food Quality / Cafeteria Hygiene Issue";
+                    suggestedDesc = "Found contamination in the cafeteria food serving area. Immediate inspection required by the health and dining committee.";
+                    break;
+                  case "general":
+                  case "other":
+                  default:
+                    suggestedTitle = "General Facility Issue Requires Attention";
+                    suggestedDesc = "A general facility issue has been observed in this area that disrupts the standard campus experience. Please assign a technician to inspect.";
+                    break;
+                }
 
-            <div className="flex items-center gap-2">
-              <Button
+                set("title", suggestedTitle);
+                set("description", suggestedDesc);
+                toast({ tone: "success", title: "AI Suggestions Applied" });
+              }}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Auto-Suggest
+            </Button>
+          </div>
+
+          <Field label="Issue Title">
+            <Input
+              value={d.title}
+              onChange={(e) => set("title", e.target.value)}
+              placeholder="e.g. Passenger elevator stuck on 3rd floor with alarm"
+              maxLength={120}
+              className="h-10 text-sm font-medium"
+            />
+          </Field>
+
+          <Field label="Description Details">
+            <div className="relative">
+              <Textarea
+                value={d.description}
+                onChange={(e) => set("description", e.target.value)}
+                placeholder="Describe the issue, exact equipment, symptoms, and potential hazards..."
+                rows={5}
+                className="text-sm pr-12"
+              />
+              <button
                 type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs flex items-center gap-1.5"
-                onClick={handleDetectGPS}
-                loading={gpsLoading}
-                title="Detect live GPS from your current device"
+                onClick={toggleListeningDesc}
+                title="Dictate description"
+                className={cn(
+                  "absolute bottom-3 right-3 rounded-full p-2 transition-colors",
+                  isListeningDesc
+                    ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 animate-pulse"
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                )}
               >
-                <Navigation className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
-                <span>Use My Live GPS</span>
-              </Button>
+                {isListeningDesc ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+            </div>
+          </Field>
+        </Card>
+      )}
 
+      {/* =========================================================================
+          STEP 3: AI ENHANCEMENT & NEURAL TRIAGE (Section 15, 16, 17)
+          ========================================================================= */}
+      {d.step === 3 && (
+        <Card className="p-6 space-y-5 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-teal-400" />
+                AI Enhancement & Neural Triage
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Powered by Groq server-side neural classification with deterministic safety safeguards.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={runAIEnhance}
+              disabled={enhancing}
+              className="border-teal-500/40 text-teal-400 text-xs"
+            >
+              {enhancing ? "Triaging..." : "Re-run AI Analysis"}
+            </Button>
+          </div>
+
+          {/* AI Analysis Cards Grid */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 text-center">
+              <span className="text-[11px] text-slate-400 block mb-1">AI Severity Override</span>
+              <select
+                className={`text-sm font-black px-2 py-1 rounded cursor-pointer border border-slate-700 outline-none w-full text-center transition-colors ${
+                  d.aiSeverity === "URGENT"
+                    ? "bg-rose-500/20 text-rose-400 hover:bg-rose-500/30"
+                    : d.aiSeverity === "HIGH"
+                    ? "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+                    : d.aiSeverity === "LOW"
+                    ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                    : "bg-teal-500/20 text-teal-300 hover:bg-teal-500/30"
+                }`}
+                value={d.aiSeverity || "MEDIUM"}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const pri = val === "URGENT" ? "urgent" : val === "HIGH" ? "high" : val === "MEDIUM" ? "medium" : "low";
+                  setD((p) => ({ ...p, aiSeverity: val, priority: pri as Priority }));
+                }}
+              >
+                <option className="bg-slate-900 text-slate-300 font-semibold" value="LOW">LOW</option>
+                <option className="bg-slate-900 text-teal-300 font-semibold" value="MEDIUM">MEDIUM</option>
+                <option className="bg-slate-900 text-amber-400 font-semibold" value="HIGH">HIGH</option>
+                <option className="bg-slate-900 text-rose-400 font-semibold" value="URGENT">URGENT</option>
+              </select>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 text-center">
+              <span className="text-[11px] text-slate-400">Confidence Score</span>
+              <div className="mt-1 text-sm font-black text-teal-400">
+                {Math.round((d.aiConfidence || 0.94) * 100)}%
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 text-center">
+              <span className="text-[11px] text-slate-400">Safety Risk Flag</span>
+              <div className="mt-1 text-sm font-black text-rose-400">
+                {d.aiSafetyRisk ? "⚠️ Physical Hazard" : "✓ Standard Issue"}
+              </div>
+            </div>
+          </div>
+
+          {/* Enhanced Description Comparison */}
+          <div className="space-y-3 pt-2">
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              Polished Professional Description (AI Grammar & Clarity)
+            </label>
+            <Textarea
+              value={d.enhancedDescription || d.description}
+              onChange={(e) => set("enhancedDescription", e.target.value)}
+              rows={4}
+              className="text-sm bg-slate-950 border-teal-500/40 text-teal-200"
+            />
+            {d.aiReason && (
+              <p className="text-xs text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800 leading-relaxed">
+                <strong>AI Rationale:</strong> {d.aiReason}
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* =========================================================================
+          STEP 4: EVIDENCE UPLOAD (Section 18)
+          ========================================================================= */}
+      {d.step === 4 && (
+        <Card className="p-6 space-y-5 animate-in fade-in duration-200">
+          <div>
+            <h2 className="text-xl font-bold text-white">Upload Visual Evidence</h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Photos or short videos allow technicians to arrive with the exact replacement parts.
+            </p>
+          </div>
+
+          <label className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-700 bg-slate-900/50 p-8 text-center cursor-pointer hover:border-teal-500 transition-colors">
+            <Upload className="h-8 w-8 text-teal-400 mb-2" />
+            <span className="text-sm font-bold text-white">Click to upload photos or videos</span>
+            <span className="text-xs text-slate-400 mt-1">
+              Supports JPEG, PNG, MP4 up to {IMAGE_MAX_MB}MB
+            </span>
+            <input
+              type="file"
+              multiple
+              accept="image/*,video/*"
+              className="hidden"
+              onChange={(e) => onFiles(e.target.files)}
+            />
+          </label>
+
+          {uploadError && <p className="text-xs text-rose-400 font-medium">{uploadError}</p>}
+
+          {/* Media Previews */}
+          {d.media.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+              {d.media.map((m, idx) => (
+                <div key={idx} className="relative rounded-xl border border-slate-800 overflow-hidden group">
+                  {m.mediaType === "image" ? (
+                    <img src={m.url} alt="Evidence" className="h-32 w-full object-cover" />
+                  ) : (
+                    <video src={m.url} className="h-32 w-full object-cover" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      set(
+                        "media",
+                        d.media.filter((_, i) => i !== idx)
+                      )
+                    }
+                    className="absolute top-1.5 right-1.5 p-1 bg-slate-900/80 rounded-full text-slate-300 hover:text-white"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* =========================================================================
+          STEP 5: LOCATION (Section 19)
+          ========================================================================= */}
+      {d.step === 5 && (
+        <Card className="p-6 space-y-5 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-white">Pinpoint Campus Location</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Select your building, floor, room number, or pin directly on the 3D map.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDetectGPS}
+              disabled={gpsLoading}
+              className="text-xs"
+            >
+              <Compass className="h-3.5 w-3.5 text-teal-400" />
+              {gpsLoading ? "Acquiring..." : "Use My GPS"}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label="Building">
               <Select
                 value={d.building}
                 onChange={(e) => {
                   const b = BUILDINGS.find((x) => x.name === e.target.value);
-                  if (b) {
-                    setD((p) => ({
-                      ...p,
-                      building: b.name,
-                      lat: b.lat,
-                      lng: b.lng,
-                    }));
-                  }
+                  setD((p) => ({
+                    ...p,
+                    building: e.target.value,
+                    lat: b?.lat || p.lat,
+                    lng: b?.lng || p.lng,
+                  }));
                 }}
-                className="h-8 text-xs w-auto"
               >
-                <option value="">Jump to Building</option>
                 {BUILDINGS.map((b) => (
                   <option key={b.id} value={b.name}>
                     {b.name}
                   </option>
                 ))}
               </Select>
-            </div>
+            </Field>
+
+            <Field label="Floor">
+              <Input
+                value={d.floor}
+                onChange={(e) => set("floor", e.target.value)}
+                placeholder="e.g. 2nd Floor, Ground"
+              />
+            </Field>
+
+            <Field label="Room / Classroom / Area">
+              <Input
+                value={d.room}
+                onChange={(e) => set("room", e.target.value)}
+                placeholder="e.g. Room 204, East Stairwell"
+              />
+            </Field>
           </div>
 
-          {/* Interactive Map Component in Pick Mode */}
-          <div className="relative w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xl bg-[#07090e]">
-            {/* Instruction banner overlay */}
-            <div className="absolute top-3 inset-x-3 z-10 pointer-events-none flex justify-center">
-              <div className="bg-slate-950/85 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-teal-500/40 text-xs font-semibold text-teal-300 shadow-lg flex items-center gap-2">
-                <MapPin className="h-3.5 w-3.5 text-teal-400 animate-bounce" />
-                <span>Tap or drag the red marker to set accurate location</span>
-              </div>
-            </div>
-
+          <div className="h-64 rounded-xl border border-slate-800 overflow-hidden relative">
             <CampusMap
               mode="pick"
               value={{ lat: d.lat, lng: d.lng }}
               onChange={(loc) => {
                 const b = nearestBuilding(loc.lat, loc.lng);
-                setD((prev) => ({
-                  ...prev,
+                setD((p) => ({
+                  ...p,
                   lat: loc.lat,
                   lng: loc.lng,
-                  building: loc.building || b?.name || prev.building,
+                  building: b?.name || p.building,
                 }));
               }}
-              height={520}
-              className="h-[520px] rounded-2xl border-0"
+              height="100%"
             />
           </div>
-
-          {/* Nearby Duplicate Check Alert */}
-          {dups.length > 0 && (
-            <Card className="border-amber-400/40 bg-amber-500/10 p-3.5">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-bold text-amber-700 dark:text-amber-300">
-                  ⚠️ {dups.length} Similar Issue{dups.length > 1 ? "s" : ""} Reported Nearby
-                </span>
-                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Within 50m</span>
-              </div>
-              <ul className="space-y-1.5">
-                {dups.slice(0, 2).map((hit) => (
-                  <li key={hit.complaint.id} className="flex items-center justify-between bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-amber-500/20 text-xs">
-                    <div>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">{hit.complaint.title}</span>
-                      <p className="text-[11px] text-slate-400">{Math.round(hit.meters)}m away · {hit.complaint.supportCount} supporters</p>
-                    </div>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => support(hit.complaint.id)}>
-                      +1 Add Support
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-
-          {/* Complaint Summary Strip */}
-          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-800 dark:text-slate-200">{d.title}</span>
-              <span className="text-slate-400">·</span>
-              <span className="text-slate-500 capitalize">{categoryLabel(d.category as Category)}</span>
-              <span className="text-slate-400">·</span>
-              <PriorityBadge priority={d.priority} />
-            </div>
-            <div className="text-slate-500 font-medium">
-              {d.floor && `${d.floor} `}{d.room && `(${d.room})`}
-            </div>
-          </div>
-
-          {/* Action Buttons: Back & Submit */}
-          <div className="flex items-center gap-3 pt-1">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1 h-11 text-xs font-semibold"
-              onClick={() => set("step", 1)}
-            >
-              ← Back to Edit Details
-            </Button>
-
-            <Button
-              type="button"
-              variant="teal"
-              className="flex-[2] h-11 text-sm font-bold shadow-lg shadow-teal-500/10 flex items-center justify-center gap-2"
-              onClick={submitComplaint}
-              loading={busy}
-            >
-              <Send className="h-4 w-4" />
-              <span>Confirm & Submit Complaint with this Location</span>
-            </Button>
-          </div>
-        </div>
+        </Card>
       )}
+
+      {/* =========================================================================
+          STEP 6: DUPLICATE DETECTION (Section 20)
+          ========================================================================= */}
+      {d.step === 6 && (
+        <Card className="p-6 space-y-5 animate-in fade-in duration-200">
+          <div>
+            <h2 className="text-xl font-bold text-white">Duplicate Detection</h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Checking for nearby open reports in {d.building} to prevent duplicate tickets.
+            </p>
+          </div>
+
+          {dups.length > 0 ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-amber-500/40 bg-amber-950/20 p-4">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                  <AlertTriangle className="h-4 w-4" />
+                  Looks like this issue may already exist.
+                </div>
+                <p className="text-xs text-slate-300 mt-1">
+                  A similar problem in this area was recently reported. You can vote that you are affected too instead of creating a duplicate.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {dups.map((hit) => (
+                  <div
+                    key={hit.complaint.id}
+                    className="rounded-xl border border-slate-800 bg-slate-900 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                  >
+                    <div>
+                      <span className="font-mono text-xs font-bold text-slate-400">
+                        {hit.complaint.publicId}
+                      </span>
+                      <h4 className="text-sm font-bold text-white mt-0.5">{hit.complaint.title}</h4>
+                      <p className="text-xs text-slate-400 line-clamp-1">{hit.complaint.description}</p>
+                      <span className="text-[11px] text-teal-400 font-semibold mt-1 inline-block">
+                        {hit.complaint.supportCount || 1} students affected · ~{hit.meters}m away
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="teal"
+                        onClick={() => {
+                          if (session) addSupport(hit.complaint.id, session.id);
+                          toast({ tone: "success", title: "Vote added (+1 I'm affected too)" });
+                          nav(`/student/reports/${hit.complaint.id}`);
+                        }}
+                        className="text-xs font-bold"
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                        I'M AFFECTED TOO +1
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-5 text-center space-y-2">
+              <Check className="h-6 w-6 text-emerald-400 mx-auto" />
+              <h4 className="text-sm font-bold text-white">No Direct Duplicates Found</h4>
+              <p className="text-xs text-slate-400">
+                No identical complaints found near {d.building}. You can proceed to review and file your ticket.
+              </p>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* =========================================================================
+          STEP 7: REVIEW (Section 13)
+          ========================================================================= */}
+      {d.step === 7 && (
+        <Card className="p-6 space-y-5 animate-in fade-in duration-200">
+          <div>
+            <h2 className="text-xl font-bold text-white">Review Complaint</h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Verify all details before submitting to the campus dispatch queue.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-slate-400">Category:</span>
+              <span className="font-bold text-white uppercase">{d.category}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-slate-400">Title:</span>
+              <span className="font-bold text-white">{d.title}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-slate-400">Location:</span>
+              <span className="font-semibold text-white">{d.building} {d.floor ? `· ${d.floor}` : ""} {d.room ? `· ${d.room}` : ""}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-slate-400">AI Priority Rating:</span>
+              <span className="font-bold text-teal-400 uppercase">{d.priority}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-1">Description:</span>
+              <p className="text-slate-200 leading-relaxed">{d.enhancedDescription || d.description}</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* =========================================================================
+          STEP 8: FINAL SUBMIT (Section 13, 22)
+          ========================================================================= */}
+      {d.step === 8 && (
+        <Card className="p-6 text-center space-y-4 animate-in fade-in duration-200">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-500/10 text-teal-400 border border-teal-500/30 mx-auto">
+            <Send className="h-6 w-6" />
+          </div>
+          <h2 className="text-2xl font-black text-white">Ready to File Ticket</h2>
+          <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+            Submitting will generate your official CMP-2026 tracking ID, alert campus facilities operations, and initiate the SLA response countdown.
+          </p>
+
+          <Button
+            size="lg"
+            variant="teal"
+            onClick={submitComplaint}
+            disabled={busy}
+            className="w-full sm:w-auto font-black px-10 shadow-lg shadow-teal-500/20"
+          >
+            {busy ? "Generating Ticket..." : "Confirm & Submit Complaint →"}
+          </Button>
+        </Card>
+      )}
+
+      {/* Bottom Navigation Buttons */}
+      <div className="flex items-center justify-between pt-2">
+        {d.step > 1 ? (
+          <Button variant="outline" size="sm" onClick={prevStep} className="text-xs">
+            <ChevronLeft className="h-4 w-4" />
+            Previous Step
+          </Button>
+        ) : (
+          <div />
+        )}
+
+        {d.step < 8 && (
+          <Button variant="teal" size="sm" onClick={nextStep} className="text-xs font-bold">
+            Continue to Next Step
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

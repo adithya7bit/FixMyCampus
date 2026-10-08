@@ -1,4 +1,5 @@
 import { Logo } from "@/components/badges";
+import { SOSButton } from "@/components/SOSButton";
 import { TextSizeControl, ThemeToggle } from "@/components/theme";
 import { useStore } from "@/lib/store";
 import { cn } from "@/utils/cn";
@@ -9,17 +10,24 @@ import {
   Map,
   Plus,
   UserRound,
+  Users,
+  Award,
+  Sparkles,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useMemo } from "react";
 
 const NAV = [
   { to: "/student", label: "Home", icon: Home, end: true },
-  { to: "/student/complaints", label: "My reports", icon: ClipboardList },
-  { to: "/student/report", label: "Report", icon: Plus, prominent: true },
-  { to: "/student/map", label: "Map", icon: Map },
+  { to: "/student/reports", label: "My Reports", icon: ClipboardList },
+  { to: "/student/issues", label: "Campus Issues", icon: Users },
+  { to: "/student/map", label: "Campus Health Map", icon: Map },
+  { to: "/student/impact", label: "Impact & Badges", icon: Award },
+  { to: "/student/notifications", label: "Notifications", icon: Bell },
   { to: "/student/profile", label: "Profile", icon: UserRound },
+  { to: "/student/report", label: "New Report", icon: Plus, prominent: true },
 ];
+
 
 export function StudentLayout() {
   const { session, state } = useStore();
@@ -150,6 +158,7 @@ export function StudentLayout() {
           ))}
         </ul>
       </nav>
+      <SOSButton />
     </div>
   );
 }

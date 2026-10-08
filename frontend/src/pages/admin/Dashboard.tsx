@@ -144,10 +144,10 @@ export function AdminDashboard() {
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={trend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="d" tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                <Tooltip />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-800" stroke="" />
+                <XAxis dataKey="d" tick={{ fontSize: 10, fill: "currentColor" }} className="text-slate-500" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "currentColor" }} className="text-slate-500" />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--tw-prose-bg, #0f172a)', borderColor: '#1e293b', color: '#f8fafc' }} itemStyle={{ color: '#f8fafc' }} />
                 <Line type="monotone" dataKey="n" name="Filed" stroke="#0f766e" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="r" name="Resolved" stroke="#6366f1" strokeWidth={2} dot={false} />
               </LineChart>
@@ -159,10 +159,10 @@ export function AdminDashboard() {
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={byCategory}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                <Tooltip />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-800" stroke="" />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "currentColor" }} className="text-slate-500" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "currentColor" }} className="text-slate-500" />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--tw-prose-bg, #0f172a)', borderColor: '#1e293b', color: '#f8fafc' }} itemStyle={{ color: '#f8fafc' }} cursor={{ fill: 'var(--tw-prose-bg, #1e293b)' }} />
                 <Bar dataKey="n" radius={[4, 4, 0, 0]}>
                   {byCategory.map((e) => (
                     <Cell key={e.name} fill={e.fill} />
@@ -177,10 +177,10 @@ export function AdminDashboard() {
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={byStatus} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10 }} />
-                <Tooltip />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-800" stroke="" />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: "currentColor" }} className="text-slate-500" />
+                <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10, fill: "currentColor" }} className="text-slate-500" />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--tw-prose-bg, #0f172a)', borderColor: '#1e293b', color: '#f8fafc' }} itemStyle={{ color: '#f8fafc' }} cursor={{ fill: 'var(--tw-prose-bg, #1e293b)' }} />
                 <Bar dataKey="n" radius={[0, 4, 4, 0]}>
                   {byStatus.map((e) => (
                     <Cell key={e.name} fill={e.fill} />
@@ -195,10 +195,10 @@ export function AdminDashboard() {
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={deptTime}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-800" stroke="" />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "currentColor" }} className="text-slate-500" />
+                <YAxis tick={{ fontSize: 10, fill: "currentColor" }} className="text-slate-500" />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--tw-prose-bg, #0f172a)', borderColor: '#1e293b', color: '#f8fafc' }} itemStyle={{ color: '#f8fafc' }} cursor={{ fill: 'var(--tw-prose-bg, #1e293b)' }} />
                 <Bar dataKey="hrs" fill="#0f766e" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
