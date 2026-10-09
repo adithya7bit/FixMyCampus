@@ -12,13 +12,19 @@ export const supabaseEnabled = Boolean(url && anon);
 
 export const supabase: SupabaseClient | null = supabaseEnabled
   ? createClient(url, anon, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
     })
   : null;
 
 // Convert string ID to a valid UUID format for PostgreSQL compatibility
 export function toUUID(id: string): string {
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  ) {
     return id;
   }
   let hash = 0;
@@ -68,7 +74,10 @@ const SB_TO_STATUS: Record<string, Status> = {
 export async function testSupabaseConnection(): Promise<boolean> {
   if (!supabase) return false;
   try {
-    const { data, error } = await supabase.from("departments").select("id").limit(1);
+    const { data, error } = await supabase
+      .from("departments")
+      .select("id")
+      .limit(1);
     return !error && Boolean(data);
   } catch {
     return false;
@@ -77,7 +86,7 @@ export async function testSupabaseConnection(): Promise<boolean> {
 
 export async function syncComplaintToSupabase(
   c: Complaint,
-  user?: Profile | null
+  user?: Profile | null,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Supabase client not initialized" };
   try {
@@ -102,12 +111,15 @@ export async function syncComplaintToSupabase(
       upvotes: c.supportCount || 1,
       resolution_note: c.verificationReason || null,
       resolution_photo: c.verificationPhotoUrl || null,
-      reopen_reason: c.status === "reopened" ? c.verificationReason || "Still broken" : null,
+      reopen_reason:
+        c.status === "reopened" ? c.verificationReason || "Still broken" : null,
       created_at: c.createdAt,
       updated_at: c.updatedAt,
     };
 
-    const { error } = await supabase.from("complaints").upsert(payload, { onConflict: "id" });
+    const { error } = await supabase
+      .from("complaints")
+      .upsert(payload, { onConflict: "id" });
     if (error) {
       console.warn("[Supabase Sync Error]:", error.message);
       return { ok: false, error: error.message };
@@ -136,11 +148,14 @@ export async function fetchSupabaseComplaints(): Promise<Complaint[]> {
       title: row.title,
       description: row.description,
       category: (row.category as Category) || "other",
-      priority: (row.priority === "urgent" ? "emergency" : row.priority) || "medium",
+      priority:
+        (row.priority === "urgent" ? "emergency" : row.priority) || "medium",
       status: SB_TO_STATUS[row.status] || "submitted",
       latitude: 11.4969,
       longitude: 77.2766,
-      placeName: row.location_details || `${row.location_building} ${row.location_floor}`,
+      placeName:
+        row.location_details ||
+        `${row.location_building} ${row.location_floor}`,
       building: row.location_building,
       floor: row.location_floor,
       room: row.location_room,
@@ -159,7 +174,9 @@ export async function fetchSupabaseComplaints(): Promise<Complaint[]> {
   }
 }
 
-export function subscribeToSupabaseComplaints(onChange: () => void): () => void {
+export function subscribeToSupabaseComplaints(
+  onChange: () => void,
+): () => void {
   if (!supabase) return () => {};
   try {
     const channel = supabase
@@ -169,7 +186,7 @@ export function subscribeToSupabaseComplaints(onChange: () => void): () => void 
         { event: "*", schema: "public", table: "complaints" },
         () => {
           onChange();
-        }
+        },
       )
       .subscribe();
 
@@ -182,7 +199,7 @@ export function subscribeToSupabaseComplaints(onChange: () => void): () => void 
 }
 
 export async function saveUserProfileToSupabase(
-  profile: Profile
+  profile: Profile,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Supabase client not initialized" };
   try {
@@ -197,7 +214,7 @@ export async function saveUserProfileToSupabase(
         verified: true,
         created_at: profile.createdAt || new Date().toISOString(),
       },
-      { onConflict: "id" }
+      { onConflict: "id" },
     );
     if (error) {
       console.warn("Supabase profile save error:", error);
@@ -210,14 +227,15 @@ export async function saveUserProfileToSupabase(
 }
 
 export async function fetchUserProfileFromSupabase(
-  email: string
+  id: string,
 ): Promise<Profile | null> {
   if (!supabase) return null;
   try {
+    const uuid = toUUID(id);
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
-      .ilike("email", email.toLowerCase().trim())
+      .eq("id", uuid)
       .maybeSingle();
 
     if (error || !data) return null;
@@ -237,13 +255,15 @@ export async function fetchUserProfileFromSupabase(
   }
 }
 
-export async function signInWithGoogleOAuth(): Promise<{ ok: boolean; error?: string }> {
+export async function signInWithGoogleOAuth(
+  redirectTo?: string,
+): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Supabase client not initialized" };
   try {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/student`,
+        redirectTo: `${window.location.origin}${redirectTo || "/student"}`,
         queryParams: {
           access_type: "offline",
           prompt: "consent",
@@ -255,7 +275,9 @@ export async function signInWithGoogleOAuth(): Promise<{ ok: boolean; error?: st
     }
     return { ok: true };
   } catch (err: any) {
-    return { ok: false, error: err?.message || "Failed to initiate Google OAuth" };
+    return {
+      ok: false,
+      error: err?.message || "Failed to initiate Google OAuth",
+    };
   }
 }
-

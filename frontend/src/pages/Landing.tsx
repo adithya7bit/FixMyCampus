@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CategoryIcon, Logo, StatusBadge, PriorityBadge } from "@/components/badges";
 import { ThemeToggle } from "@/components/theme";
@@ -32,8 +32,18 @@ import {
 } from "lucide-react";
 
 export function Landing() {
-  const { state, supabaseStatus } = useStore();
+  const { state, supabaseStatus, session } = useStore();
   const nav = useNavigate();
+
+  useEffect(() => {
+    if (session) {
+      if (session.role === "admin" || session.role === "super_admin") {
+        nav("/admin", { replace: true });
+      } else {
+        nav("/student", { replace: true });
+      }
+    }
+  }, [session, nav]);
 
   // Interactive AI Showcase state
   const [demoPrompt, setDemoPrompt] = useState("Main passenger elevator stuck on 3rd floor with alarm ringing");
@@ -658,5 +668,3 @@ export function Landing() {
     </div>
   );
 }
-/ /   T r i g g e r   V e r c e l   B u i l d  
- 

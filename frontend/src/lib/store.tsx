@@ -8,10 +8,20 @@ import {
   type ReactNode,
 } from "react";
 import { DUPLICATE_METERS, RATE_LIMIT_PER_DAY } from "@/lib/constants";
-import { haversineMeters, jaccard, nearestBuilding, placeNameFrom } from "@/lib/geo";
+import {
+  haversineMeters,
+  jaccard,
+  nearestBuilding,
+  placeNameFrom,
+} from "@/lib/geo";
 import { uid } from "@/lib/format";
 import { createSeed, type SeedState } from "@/lib/seed";
-import { assertTransition, canTransition, isOpen, isTerminal } from "@/lib/status";
+import {
+  assertTransition,
+  canTransition,
+  isOpen,
+  isTerminal,
+} from "@/lib/status";
 import type {
   AppSettings,
   Category,
@@ -98,10 +108,12 @@ interface StoreCtx {
   state: SeedState;
   session: Profile | null;
   toasts: ToastItem[];
-  signIn: (email: string, password: string) => { ok: boolean; error?: string; user?: Profile };
+  signIn: (
+    email: string,
+    password: string,
+  ) => { ok: boolean; error?: string; user?: Profile };
   signInWithGoogle: (
-    customEmail?: string,
-    customName?: string
+    redirectTo?: string,
   ) => Promise<{ ok: boolean; error?: string; user?: Profile }>;
   signUp: (input: {
     fullName: string;
@@ -113,8 +125,15 @@ interface StoreCtx {
   }) => { ok: boolean; error?: string };
   signOut: () => void;
   requestReset: (email: string) => { ok: boolean; error?: string };
-  createComplaint: (input: CreateComplaintInput) => { ok: boolean; complaint?: Complaint; error?: string };
-  addSupport: (complaintId: string, studentId: string) => { ok: boolean; error?: string };
+  createComplaint: (input: CreateComplaintInput) => {
+    ok: boolean;
+    complaint?: Complaint;
+    error?: string;
+  };
+  addSupport: (
+    complaintId: string,
+    studentId: string,
+  ) => { ok: boolean; error?: string };
   findDuplicates: (input: {
     category: Category;
     lat: number;
@@ -162,8 +181,15 @@ interface StoreCtx {
     reason?: string;
     photoUrl?: string;
   }) => { ok: boolean; error?: string };
-  merge: (parentId: string, childId: string, actorId: string) => { ok: boolean; error?: string };
-  suggestAssignment: (category: Category) => { departmentId?: string; workerId?: string };
+  merge: (
+    parentId: string,
+    childId: string,
+    actorId: string,
+  ) => { ok: boolean; error?: string };
+  suggestAssignment: (category: Category) => {
+    departmentId?: string;
+    workerId?: string;
+  };
   saveWorker: (w: Worker) => void;
   deleteWorker: (id: string) => void;
   saveDepartment: (d: SeedState["departments"][number]) => void;
@@ -171,7 +197,12 @@ interface StoreCtx {
   markRead: (id: string) => void;
   markAllRead: (userId: string) => void;
   saveSettings: (s: AppSettings) => void;
-  createAdmin: (input: { fullName: string; email: string; password: string; department: string }) => {
+  createAdmin: (input: {
+    fullName: string;
+    email: string;
+    password: string;
+    department: string;
+  }) => {
     ok: boolean;
     error?: string;
   };
@@ -188,11 +219,13 @@ const Ctx = createContext<StoreCtx | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SeedState>(() => load());
-  const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem("fmc-session"));
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [supabaseStatus, setSupabaseStatus] = useState<"connected" | "connecting" | "offline">(
-    supabaseEnabled ? "connecting" : "offline"
+  const [sessionId, setSessionId] = useState<string | null>(() =>
+    localStorage.getItem("fmc-session"),
   );
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [supabaseStatus, setSupabaseStatus] = useState<
+    "connected" | "connecting" | "offline"
+  >(supabaseEnabled ? "connecting" : "offline");
 
   const session = state.users.find((u) => u.id === sessionId) ?? null;
 
@@ -238,7 +271,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return {
             ...s,
             complaints: Array.from(map.values()).sort(
-              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+              (a, b) =>
+                new Date(b.createdAt).getTime() -
+                new Date(a.createdAt).getTime(),
             ),
           };
         });
@@ -268,19 +303,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const fullName =
         user.user_metadata?.full_name ||
         user.user_metadata?.name ||
-        email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
-      const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
+        email
+          .split("@")[0]
+          .replace(/[._-]/g, " ")
+          .replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const avatarUrl =
+        user.user_metadata?.avatar_url || user.user_metadata?.picture;
+
+      const existingProfile = await fetchUserProfileFromSupabase(user.id);
+      const role = existingProfile?.role || "student";
 
       const profile: Profile = {
         id: user.id,
         email,
         fullName,
-        role: "student",
-        department: "Computer Science & Engineering",
-        year: "3rd Year",
-        hostel: "hostel",
+        role,
+        department: existingProfile?.department || "Computer Science & Engineering",
+        year: existingProfile?.year || "3rd Year",
+        hostel: existingProfile?.hostel || "hostel",
         avatarUrl,
-        createdAt: user.created_at || new Date().toISOString(),
+        createdAt: existingProfile?.createdAt || user.created_at || new Date().toISOString(),
       };
 
       // Persist to Supabase profiles database table
@@ -288,7 +330,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       patch((s) => ({
         ...s,
-        users: [...s.users.filter((u) => u.email.toLowerCase() !== email && u.id !== user.id), profile],
+        users: [
+          ...s.users.filter(
+            (u) => u.email.toLowerCase() !== email && u.id !== user.id,
+          ),
+          profile,
+        ],
       }));
 
       setSessionId(profile.id);
@@ -304,7 +351,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user && (event === "SIGNED_IN" || event === "USER_UPDATED")) {
+      if (
+        session?.user &&
+        (event === "SIGNED_IN" || event === "USER_UPDATED")
+      ) {
         handleSupabaseSession(session.user);
       } else if (event === "SIGNED_OUT") {
         setSessionId(null);
@@ -320,7 +370,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const toast = useCallback((t: Omit<ToastItem, "id">) => {
     const id = uid("toast");
     setToasts((prev) => [...prev, { ...t, id }]);
-    window.setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 4200);
+    window.setTimeout(
+      () => setToasts((prev) => prev.filter((x) => x.id !== id)),
+      4200,
+    );
   }, []);
 
   const notify = useCallback(
@@ -342,53 +395,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const signIn: StoreCtx["signIn"] = (email, password) => {
     const user = state.users.find(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password,
+      (u) =>
+        u.email.toLowerCase() === email.trim().toLowerCase() &&
+        u.password === password,
     );
-    if (!user) return { ok: false, error: "Those credentials don’t match our records." };
+    if (!user)
+      return { ok: false, error: "Those credentials don’t match our records." };
     setSessionId(user.id);
     localStorage.setItem("fmc-session", user.id);
     saveUserProfileToSupabase(user).catch(() => {});
     return { ok: true, user };
   };
 
-  const signInWithGoogle: StoreCtx["signInWithGoogle"] = async (customEmail, customName) => {
-    if (customEmail) {
-      const email = customEmail.trim().toLowerCase();
-      const id = `u-${toUUID(email).slice(0, 12)}`;
-      const name =
-        customName ||
-        email
-          .split("@")[0]
-          .replace(/[._-]/g, " ")
-          .replace(/\b\w/g, (c) => c.toUpperCase());
-
-      const googleProfile: Profile = {
-        id,
-        email,
-        fullName: name,
-        role: "student",
-        department: "Computer Science & Engineering",
-        year: "3rd Year",
-        hostel: "hostel",
-        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
-        createdAt: new Date().toISOString(),
-      };
-
-      // Store in Supabase database profiles table
-      await saveUserProfileToSupabase(googleProfile);
-
-      patch((s) => ({
-        ...s,
-        users: [...s.users.filter((u) => u.email.toLowerCase() !== email), googleProfile],
-      }));
-
-      setSessionId(googleProfile.id);
-      localStorage.setItem("fmc-session", googleProfile.id);
-      return { ok: true, user: googleProfile };
-    }
-
+  const signInWithGoogle: StoreCtx["signInWithGoogle"] = async (
+    redirectTo,
+  ) => {
     if (supabase) {
-      const res = await signInWithGoogleOAuth();
+      const res = await signInWithGoogleOAuth(redirectTo);
       if (!res.ok) {
         return { ok: false, error: res.error };
       }
@@ -399,10 +422,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp: StoreCtx["signUp"] = (input) => {
-    if (state.users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+    if (
+      state.users.some(
+        (u) => u.email.toLowerCase() === input.email.toLowerCase(),
+      )
+    ) {
       return { ok: false, error: "An account with this email already exists." };
     }
-    if (input.password.length < 8) return { ok: false, error: "Password must be at least 8 characters." };
+    if (input.password.length < 8)
+      return { ok: false, error: "Password must be at least 8 characters." };
     const id = uid("u");
     const user: Profile = {
       id,
@@ -429,8 +457,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const requestReset: StoreCtx["requestReset"] = (email) => {
-    const exists = state.users.some((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (!exists) return { ok: false, error: "No account found for that email." };
+    const exists = state.users.some(
+      (u) => u.email.toLowerCase() === email.toLowerCase(),
+    );
+    if (!exists)
+      return { ok: false, error: "No account found for that email." };
     return { ok: true };
   };
 
@@ -438,7 +469,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     return state.complaints.filter(
-      (c) => c.studentId === studentId && new Date(c.createdAt) >= start && c.status !== "merged",
+      (c) =>
+        c.studentId === studentId &&
+        new Date(c.createdAt) >= start &&
+        c.status !== "merged",
     ).length;
   };
 
@@ -447,12 +481,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     for (const c of state.complaints) {
       if (input.excludeId && c.id === input.excludeId) continue;
       if (c.category !== input.category) continue;
-      if (!isOpen(c.status) || c.status === "resolved_pending_verification") continue;
+      if (!isOpen(c.status) || c.status === "resolved_pending_verification")
+        continue;
       const meters = haversineMeters(
         { lat: input.lat, lng: input.lng },
         { lat: c.latitude, lng: c.longitude },
       );
-      const similarity = jaccard(input.description, `${c.title} ${c.description}`);
+      const similarity = jaccard(
+        input.description,
+        `${c.title} ${c.description}`,
+      );
       if (meters <= DUPLICATE_METERS || similarity >= 0.32) {
         hits.push({ complaint: c, meters, similarity });
       }
@@ -462,19 +500,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const createComplaint: StoreCtx["createComplaint"] = (input) => {
     if (todayCount(input.studentId) >= RATE_LIMIT_PER_DAY) {
-      return { ok: false, error: `Daily limit reached (${RATE_LIMIT_PER_DAY} reports).` };
+      return {
+        ok: false,
+        error: `Daily limit reached (${RATE_LIMIT_PER_DAY} reports).`,
+      };
     }
     if (!input.title.trim() || input.title.trim().length < 8) {
-      return { ok: false, error: "Please write a clearer title (at least 8 characters)." };
+      return {
+        ok: false,
+        error: "Please write a clearer title (at least 8 characters).",
+      };
     }
     if (!input.description.trim() || input.description.trim().length < 20) {
-      return { ok: false, error: "Please describe the problem in a bit more detail." };
+      return {
+        ok: false,
+        error: "Please describe the problem in a bit more detail.",
+      };
     }
     const now = new Date().toISOString();
     const id = uid("cmp");
     const seq = state.nextPublicSeq;
-    const building = input.building || nearestBuilding(input.latitude, input.longitude).name;
-    const dept = state.departments.find((d) => d.categories.includes(input.category));
+    const building =
+      input.building || nearestBuilding(input.latitude, input.longitude).name;
+    const dept = state.departments.find((d) =>
+      d.categories.includes(input.category),
+    );
     const created: Complaint = {
       id,
       publicId: publicId(seq),
@@ -531,7 +581,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       events: [event, ...s.events],
     }));
     syncComplaintToSupabase(created, session);
-    const admins = state.users.filter((u) => u.role === "admin" || u.role === "super_admin");
+    const admins = state.users.filter(
+      (u) => u.role === "admin" || u.role === "super_admin",
+    );
     admins.forEach((a) =>
       notify({
         userId: a.id,
@@ -548,27 +600,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const addSupport: StoreCtx["addSupport"] = (complaintId, studentId) => {
-    const already = state.supports.some((x) => x.complaintId === complaintId && x.studentId === studentId);
-    if (already) return { ok: false, error: "You have already supported this report." };
+    const already = state.supports.some(
+      (x) => x.complaintId === complaintId && x.studentId === studentId,
+    );
+    if (already)
+      return { ok: false, error: "You have already supported this report." };
     const now = new Date().toISOString();
     patch((s) => ({
       ...s,
       supports: [...s.supports, { complaintId, studentId, createdAt: now }],
       complaints: s.complaints.map((c) =>
-        c.id === complaintId ? { ...c, supportCount: c.supportCount + 1, updatedAt: now } : c,
+        c.id === complaintId
+          ? { ...c, supportCount: c.supportCount + 1, updatedAt: now }
+          : c,
       ),
     }));
     const suppTarget = state.complaints.find((x) => x.id === complaintId);
     if (suppTarget) {
       syncComplaintToSupabase(
-        { ...suppTarget, supportCount: suppTarget.supportCount + 1, updatedAt: now },
-        session
+        {
+          ...suppTarget,
+          supportCount: suppTarget.supportCount + 1,
+          updatedAt: now,
+        },
+        session,
       );
     }
     return { ok: true };
   };
 
-  const transition: StoreCtx["transition"] = ({ complaintId, to, actorId, note, visibility = "public" }) => {
+  const transition: StoreCtx["transition"] = ({
+    complaintId,
+    to,
+    actorId,
+    note,
+    visibility = "public",
+  }) => {
     const c = state.complaints.find((x) => x.id === complaintId);
     if (!c) return { ok: false, error: "Complaint not found." };
     if (!canTransition(c.status, to)) {
@@ -577,7 +644,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       assertTransition(c.status, to);
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Invalid transition" };
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "Invalid transition",
+      };
     }
     const now = new Date().toISOString();
     const from = c.status;
@@ -596,9 +666,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               status: nextStatus,
               reopenCount,
               updatedAt: now,
-              resolvedAt: nextStatus === "resolved_pending_verification" ? now : x.resolvedAt,
+              resolvedAt:
+                nextStatus === "resolved_pending_verification"
+                  ? now
+                  : x.resolvedAt,
               closedAt:
-                nextStatus === "closed_verified" || nextStatus === "auto_closed" ? now : x.closedAt,
+                nextStatus === "closed_verified" || nextStatus === "auto_closed"
+                  ? now
+                  : x.closedAt,
               isOverdue: isTerminal(nextStatus) ? false : x.isOverdue,
             }
           : x,
@@ -624,12 +699,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         status: nextStatus,
         reopenCount,
         updatedAt: now,
-        resolvedAt: nextStatus === "resolved_pending_verification" ? now : c.resolvedAt,
+        resolvedAt:
+          nextStatus === "resolved_pending_verification" ? now : c.resolvedAt,
         closedAt:
-          nextStatus === "closed_verified" || nextStatus === "auto_closed" ? now : c.closedAt,
+          nextStatus === "closed_verified" || nextStatus === "auto_closed"
+            ? now
+            : c.closedAt,
         isOverdue: isTerminal(nextStatus) ? false : c.isOverdue,
       },
-      session
+      session,
     );
 
     const student = c.studentId;
@@ -641,7 +719,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         title: "Is this problem actually fixed?",
         body: `${c.publicId} was marked resolved. Please confirm.`,
       });
-    } else if (to === "reopened" || nextStatus === "under_review" && from === "resolved_pending_verification") {
+    } else if (
+      to === "reopened" ||
+      (nextStatus === "under_review" &&
+        from === "resolved_pending_verification")
+    ) {
       state.users
         .filter((u) => u.role === "admin" || u.role === "super_admin")
         .forEach((a) =>
@@ -665,19 +747,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   };
 
-  const assign: StoreCtx["assign"] = ({ complaintId, actorId, departmentId, workerId, note }) => {
+  const assign: StoreCtx["assign"] = ({
+    complaintId,
+    actorId,
+    departmentId,
+    workerId,
+    note,
+  }) => {
     const c = state.complaints.find((x) => x.id === complaintId);
     if (!c) return { ok: false, error: "Not found" };
     const now = new Date().toISOString();
     const worker = state.workers.find((w) => w.id === workerId);
     const dept = state.departments.find((d) => d.id === departmentId);
-    const to: Status = c.status === "submitted" || c.status === "under_review" || c.status === "reopened" ? "assigned" : c.status;
+    const to: Status =
+      c.status === "submitted" ||
+      c.status === "under_review" ||
+      c.status === "reopened"
+        ? "assigned"
+        : c.status;
     if (to === "assigned" && c.status !== "assigned") {
       const t = transition({
         complaintId,
         to: "assigned",
         actorId,
-        note: note || `Assigned to ${worker?.name ?? dept?.name ?? "department"}`,
+        note:
+          note || `Assigned to ${worker?.name ?? dept?.name ?? "department"}`,
       });
       if (!t.ok) return t;
     }
@@ -727,12 +821,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const addComment: StoreCtx["addComment"] = ({ complaintId, authorId, body, visibility }) => {
+  const addComment: StoreCtx["addComment"] = ({
+    complaintId,
+    authorId,
+    body,
+    visibility,
+  }) => {
     const now = new Date().toISOString();
     patch((s) => ({
       ...s,
       comments: [
-        { id: uid("cmt"), complaintId, authorId, body, visibility, createdAt: now },
+        {
+          id: uid("cmt"),
+          complaintId,
+          authorId,
+          body,
+          visibility,
+          createdAt: now,
+        },
         ...s.comments,
       ],
     }));
@@ -748,21 +854,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const addMedia: StoreCtx["addMedia"] = ({ complaintId, url, kind, mediaType }) => {
+  const addMedia: StoreCtx["addMedia"] = ({
+    complaintId,
+    url,
+    kind,
+    mediaType,
+  }) => {
     const now = new Date().toISOString();
     patch((s) => ({
       ...s,
       media: [
-        { id: uid("med"), complaintId, storagePath: url, kind, mediaType, createdAt: now },
+        {
+          id: uid("med"),
+          complaintId,
+          storagePath: url,
+          kind,
+          mediaType,
+          createdAt: now,
+        },
         ...s.media,
       ],
     }));
   };
 
-  const verify: StoreCtx["verify"] = ({ complaintId, studentId, outcome, reason, photoUrl }) => {
+  const verify: StoreCtx["verify"] = ({
+    complaintId,
+    studentId,
+    outcome,
+    reason,
+    photoUrl,
+  }) => {
     const c = state.complaints.find((x) => x.id === complaintId);
     if (!c) return { ok: false, error: "Not found" };
-    if (c.studentId !== studentId) return { ok: false, error: "Only the reporter can verify." };
+    if (c.studentId !== studentId)
+      return { ok: false, error: "Only the reporter can verify." };
     if (c.status === "closed_verified" || c.status === "rejected") {
       return { ok: false, error: "This complaint is already closed." };
     }
@@ -781,7 +906,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...s.verifications,
       ],
     }));
-    if (photoUrl) addMedia({ complaintId, url: photoUrl, kind: "reopen", mediaType: "image" });
+    if (photoUrl)
+      addMedia({
+        complaintId,
+        url: photoUrl,
+        kind: "reopen",
+        mediaType: "image",
+      });
     if (outcome === "fixed") {
       return transition({
         complaintId,
@@ -799,7 +930,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   const merge: StoreCtx["merge"] = (parentId, childId, actorId) => {
-    if (parentId === childId) return { ok: false, error: "Cannot merge into itself." };
+    if (parentId === childId)
+      return { ok: false, error: "Cannot merge into itself." };
     const child = state.complaints.find((c) => c.id === childId);
     if (!child) return { ok: false, error: "Not found" };
     const now = new Date().toISOString();
@@ -807,10 +939,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...s,
       complaints: s.complaints.map((c) => {
         if (c.id === childId) {
-          return { ...c, status: "merged" as Status, parentComplaintId: parentId, updatedAt: now };
+          return {
+            ...c,
+            status: "merged" as Status,
+            parentComplaintId: parentId,
+            updatedAt: now,
+          };
         }
         if (c.id === parentId) {
-          return { ...c, supportCount: c.supportCount + child.supportCount, updatedAt: now };
+          return {
+            ...c,
+            supportCount: c.supportCount + child.supportCount,
+            updatedAt: now,
+          };
         }
         return c;
       }),
@@ -834,10 +975,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const suggestAssignment: StoreCtx["suggestAssignment"] = (category) => {
     const dept = state.departments.find((d) => d.categories.includes(category));
     if (!dept) return {};
-    const active = state.workers.filter((w) => w.departmentId === dept.id && w.isActive);
+    const active = state.workers.filter(
+      (w) => w.departmentId === dept.id && w.isActive,
+    );
     const load = (id: string) =>
       state.complaints.filter(
-        (c) => c.assignedWorkerId === id && isOpen(c.status) && c.status !== "resolved_pending_verification",
+        (c) =>
+          c.assignedWorkerId === id &&
+          isOpen(c.status) &&
+          c.status !== "resolved_pending_verification",
       ).length;
     const sorted = [...active].sort((a, b) => load(a.id) - load(b.id));
     return { departmentId: dept.id, workerId: sorted[0]?.id };
@@ -848,7 +994,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const exists = s.workers.some((x) => x.id === w.id);
       return {
         ...s,
-        workers: exists ? s.workers.map((x) => (x.id === w.id ? w : x)) : [...s.workers, w],
+        workers: exists
+          ? s.workers.map((x) => (x.id === w.id ? w : x))
+          : [...s.workers, w],
       };
     });
   };
@@ -862,7 +1010,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const exists = s.departments.some((x) => x.id === d.id);
       return {
         ...s,
-        departments: exists ? s.departments.map((x) => (x.id === d.id ? d : x)) : [...s.departments, d],
+        departments: exists
+          ? s.departments.map((x) => (x.id === d.id ? d : x))
+          : [...s.departments, d],
       };
     });
   };
@@ -881,7 +1031,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const now = new Date().toISOString();
     patch((s) => ({
       ...s,
-      notifications: s.notifications.map((n) => (n.id === id ? { ...n, readAt: now } : n)),
+      notifications: s.notifications.map((n) =>
+        n.id === id ? { ...n, readAt: now } : n,
+      ),
     }));
   };
 
@@ -895,10 +1047,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const saveSettings = (settings: AppSettings) => patch((s) => ({ ...s, settings }));
+  const saveSettings = (settings: AppSettings) =>
+    patch((s) => ({ ...s, settings }));
 
   const createAdmin: StoreCtx["createAdmin"] = (input) => {
-    if (state.users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+    if (
+      state.users.some(
+        (u) => u.email.toLowerCase() === input.email.toLowerCase(),
+      )
+    ) {
       return { ok: false, error: "Email already in use." };
     }
     const user: Profile = {
@@ -923,7 +1080,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     toast({ tone: "info", title: "Demo data restored" });
   };
 
-  const dismissToast = (id: string) => setToasts((t) => t.filter((x) => x.id !== id));
+  const dismissToast = (id: string) =>
+    setToasts((t) => t.filter((x) => x.id !== id));
 
   const runMaintenance = useCallback(() => {
     const now = Date.now();
@@ -932,7 +1090,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const events = [...s.events];
       const notifications = [...s.notifications];
       complaints = complaints.map((c) => {
-        if (isOpen(c.status) && c.status !== "resolved_pending_verification" && now > new Date(c.slaDueAt).getTime() && !c.isOverdue) {
+        if (
+          isOpen(c.status) &&
+          c.status !== "resolved_pending_verification" &&
+          now > new Date(c.slaDueAt).getTime() &&
+          !c.isOverdue
+        ) {
           notifications.unshift({
             id: uid("nt"),
             userId: "u_director",
@@ -945,7 +1108,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return { ...c, isOverdue: true };
         }
         if (c.status === "resolved_pending_verification") {
-          const resolved = c.resolvedAt ? new Date(c.resolvedAt).getTime() : new Date(c.updatedAt).getTime();
+          const resolved = c.resolvedAt
+            ? new Date(c.resolvedAt).getTime()
+            : new Date(c.updatedAt).getTime();
           const days = (now - resolved) / 864e5;
           if (days >= s.settings.autoCloseDays) {
             events.unshift({
@@ -958,7 +1123,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               visibility: "public",
               createdAt: new Date().toISOString(),
             });
-            return { ...c, status: "auto_closed", closedAt: new Date().toISOString(), isOverdue: false };
+            return {
+              ...c,
+              status: "auto_closed",
+              closedAt: new Date().toISOString(),
+              isOverdue: false,
+            };
           }
         }
         return c;
@@ -1009,7 +1179,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       syncWithSupabase,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state, session, toasts, toast, runMaintenance, supabaseStatus, syncWithSupabase],
+    [
+      state,
+      session,
+      toasts,
+      toast,
+      runMaintenance,
+      supabaseStatus,
+      syncWithSupabase,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

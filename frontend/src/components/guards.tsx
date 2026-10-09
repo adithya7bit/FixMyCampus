@@ -10,12 +10,14 @@ export function RequireAuth({
   roles: Role[];
   children: ReactNode;
 }) {
-  const { session } = useStore();
+  const { session, patch } = useStore();
   const loc = useLocation();
+
   if (!session) {
     const to = roles.includes("student") ? "/student/login" : "/admin/login";
     return <Navigate to={to} replace state={{ from: loc.pathname }} />;
   }
+
   if (!roles.includes(session.role)) {
     if (session.role === "student") return <Navigate to="/student" replace />;
     return <Navigate to="/admin" replace />;
@@ -36,8 +38,6 @@ export function RedirectIfAuthed({
     if (portal === "admin" && (session.role === "admin" || session.role === "super_admin")) {
       return <Navigate to="/admin" replace />;
     }
-    if (portal === "admin" && session.role === "student") return <Navigate to="/student" replace />;
-    if (portal === "student" && session.role !== "student") return <Navigate to="/admin" replace />;
   }
   return <>{children}</>;
 }

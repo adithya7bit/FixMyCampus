@@ -150,7 +150,7 @@ export function AdminLogin() {
   const { signInWithGoogle, toast } = useStore();
 
   const handleGoogleSignIn = async () => {
-    const res = await signInWithGoogle();
+    const res = await signInWithGoogle("/admin");
     if (!res.ok) {
       toast({ tone: "error", title: "Authentication Failed", message: res.error || "Could not connect to Google." });
     }
@@ -180,7 +180,7 @@ export function AdminLogin() {
         className="mt-8 w-full flex items-center justify-center gap-3 px-4 py-3.5 rounded-xl border border-slate-700 lg:border-slate-200 lg:dark:border-slate-700 bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm transition shadow-sm hover:shadow active:scale-[0.99] cursor-pointer"
       >
         <GoogleIcon className="h-5 w-5" />
-        <span>Continue with Organization Single Sign-On</span>
+        <span>Continue with Google</span>
       </button>
 
       <Link to="/" className="mt-12 inline-block text-sm text-slate-500 hover:text-slate-400">
